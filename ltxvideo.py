@@ -29,7 +29,7 @@ from typing import Literal
     tags=["video", "LTX", "generation"],
     category="video",
     version="0.1.2",
-    use_cache=True,
+    use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
     """Generates videos using LTX-Video pipeline from Hugging Face Diffusers."""
