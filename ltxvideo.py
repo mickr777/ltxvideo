@@ -28,7 +28,7 @@ from typing import Literal
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.1.0",
+    version="0.1.2",
     use_cache=True,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -44,11 +44,21 @@ class LTXVideoInvocation(BaseInvocation):
     input_image: ImageField = InputField(
         description="Input image for image-to-video task", default=None
     )
-    width: int = InputField(description="Width of the generated video", default=640)
-    height: int = InputField(description="Height of the generated video", default=640)
-    num_frames: int = InputField(
-        description="Number of frames in the video", default=105
-    )
+    width: Literal[
+        "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544", 
+        "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992", 
+        "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
+    ] = InputField(description="Width of the generated video", default="640")
+    height: Literal[
+        "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544",
+        "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992",
+          "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
+    ] = InputField(description="Height of the generated video", default="640")
+    
+    num_frames: Literal[
+        "9", "17", "25", "33", "41", "49", "57", "65", "73", "81", "89", "97", "105", "113", "121", "129",
+        "137", "145", "153", "161", "169", "177", "185", "193", "201", "209", "217", "225", "233", "241", "249", "257",
+    ] = InputField(description="Number of frames in the video", default="105")
     fps: int = InputField(
         description="Frames per second for the generated video", default=24
     )
@@ -61,7 +71,7 @@ class LTXVideoInvocation(BaseInvocation):
     )
     output_path: str = InputField(
         description="Path to save the generated video",
-        default="generated_videos",
+        default=str(Path(__file__).parent / "generated_videos"),
     )
 
     def initialize_pipeline(self):
@@ -94,6 +104,7 @@ class LTXVideoInvocation(BaseInvocation):
 
             pipeline.reset_device_map()
             pipeline.enable_model_cpu_offload()
+            pipeline.enable_attention_slicing()
 
             return pipeline
 
@@ -105,27 +116,22 @@ class LTXVideoInvocation(BaseInvocation):
         """Loads and preprocesses the input image while preserving the aspect ratio."""
         try:
             if self.input_image:
-                # Retrieve the image from context
                 image = context.images.get_pil(self.input_image.image_name)
 
-                # Check if image exists
                 if image is None:
                     raise ValueError("Image retrieval failed. Image is None.")
 
-                # Get original dimensions
                 original_width, original_height = image.size
 
-                # Calculate scaling factor to preserve aspect ratio
-                scale = min(self.width / original_width, self.height / original_height)
+                width = int(self.width)
+                height = int(self.height)
 
-                # Compute new dimensions
-                new_width = int(original_width * scale)
-                new_height = int(original_height * scale)
+                scale = min(width / original_width, height / original_height)
 
-                # Resize the image while maintaining aspect ratio
+                new_width = (int(original_width * scale) + 31) // 32 * 32
+                new_height = (int(original_height * scale) + 31) // 32 * 32
+
                 image = image.resize((new_width, new_height))
-
-                # Debugging output
                 print(f"Resized image dimensions: {new_width}x{new_height}")
                 return image
 
@@ -139,17 +145,23 @@ class LTXVideoInvocation(BaseInvocation):
         try:
             print(f"Task type: {self.task_type}")
 
+            # Use dynamic dimensions for image-to-video
+            if self.task_type == "image-to-video" and image is not None:
+                output_width, output_height = image.size
+            else:
+                output_width, output_height = int(self.width), int(self.height)
+
+            # Generate video frames
             if self.task_type == "text-to-video":
                 print(f"Generating video with prompt: {prompt}")
                 video_output = pipeline(
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    width=self.width,
-                    height=self.height,
-                    num_frames=self.num_frames,
+                    width=output_width,
+                    height=output_height,
+                    num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
-                    max_sequence_length=200,
                 )
             elif self.task_type == "image-to-video":
                 print(f"Generating video with image and prompt: {prompt}")
@@ -157,16 +169,16 @@ class LTXVideoInvocation(BaseInvocation):
                     image=image,
                     prompt=prompt,
                     negative_prompt=negative_prompt,
-                    width=self.width,
-                    height=self.height,
-                    num_frames=self.num_frames,
+                    width=output_width,
+                    height=output_height,
+                    num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
-                    max_sequence_length=200,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
 
+            # Process frames
             if video_output.frames:
                 video_frames = []
 
@@ -177,7 +189,6 @@ class LTXVideoInvocation(BaseInvocation):
                     else:
                         all_frames.append(frame)
 
-                # Process each frame
                 for frame in all_frames:
                     if isinstance(frame, (Image.Image, np.ndarray)):
                         frame_array = np.array(frame, dtype=np.uint8)
@@ -188,24 +199,24 @@ class LTXVideoInvocation(BaseInvocation):
                         print(f"Skipping frame of unsupported type: {type(frame)}")
 
                 print(f"Total frames collected: {len(video_frames)}")
-                if len(video_frames) != self.num_frames:
-                    print(
-                        f"Warning: Expected {self.num_frames} frames, but got {len(video_frames)}"
-                    )
 
+                # Save video
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
 
                 video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                 full_video_path = Path(self.output_path) / video_file_name
 
                 if video_frames:
+                    frame_height, frame_width = video_frames[0].shape[:2]
+
                     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
                     out = cv2.VideoWriter(
                         str(full_video_path),
                         fourcc,
                         self.fps,
-                        (self.width, self.height),
+                        (frame_width, frame_height), 
                     )
+
 
                     for frame in video_frames:
                         out.write(frame)
@@ -219,13 +230,9 @@ class LTXVideoInvocation(BaseInvocation):
                     print("No valid frames to export.")
                     return StringOutput(value="No valid frames generated.")
 
-            else:
-                print("No frames to export.")
-                return StringOutput(value="No frames generated.")
-
         except Exception as e:
             print(f"Error during video generation: {e}")
-        return None
+            return StringOutput(value=f"Error during video generation: {str(e)}")
 
     def invoke(self, context: InvocationContext) -> StringOutput:
         """Handles the invocation of video generation."""
@@ -245,6 +252,7 @@ class LTXVideoInvocation(BaseInvocation):
             if not image and self.task_type == "image-to-video":
                 return StringOutput(value="Failed to load input image.")
 
+            # Generate video
             return self.generate_video(
                 pipeline, image, self.prompt, self.negative_prompt
             )
