@@ -39,7 +39,8 @@ class LTXVideoInvocation(BaseInvocation):
     )
     prompt: str = InputField(description="Text prompt for the video")
     negative_prompt: str = InputField(
-        description="Negative prompt to avoid unwanted artifacts", default=""
+        description="Negative prompt to avoid unwanted artifacts", 
+        default="low quality, blurry, distorted, watermark, artifacts, text artifacts, noisy, oversaturated, underexposed, overexposed, low resolution, jpeg artifacts, bad anatomy, malformed limbs, extra limbs, missing limbs, bad proportions, unnatural lighting, unrealistic details, unnatural skin texture, duplicate elements"
     )
     input_image: ImageField = InputField(
         description="Input image for image-to-video task", default=None
@@ -162,6 +163,7 @@ class LTXVideoInvocation(BaseInvocation):
                     num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
+                    max_sequence_length=250,
                 )
             elif self.task_type == "image-to-video":
                 print(f"Generating video with image and prompt: {prompt}")
@@ -174,6 +176,7 @@ class LTXVideoInvocation(BaseInvocation):
                     num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
+                    max_sequence_length=250,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
