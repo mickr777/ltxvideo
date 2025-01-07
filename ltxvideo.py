@@ -28,7 +28,7 @@ from typing import Literal
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.1.2",
+    version="0.2.0",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -69,6 +69,9 @@ class LTXVideoInvocation(BaseInvocation):
     guidance_scale: float = InputField(
         description="Guidance scale for classifier-free diffusion. Higher values = stronger prompt adherence, lower values = better image quality.",
         default=3.0,
+    )
+    seed: int = InputField(
+    description="seed for reproducibility. Set -1 for random behavior.", default=-1
     )
     output_path: str = InputField(
         description="Path to save the generated video",
@@ -146,13 +149,13 @@ class LTXVideoInvocation(BaseInvocation):
         try:
             print(f"Task type: {self.task_type}")
 
-            # Use dynamic dimensions for image-to-video
             if self.task_type == "image-to-video" and image is not None:
                 output_width, output_height = image.size
             else:
                 output_width, output_height = int(self.width), int(self.height)
 
-            # Generate video frames
+            generator = torch.manual_seed(self.seed) if self.seed > 0 else None
+
             if self.task_type == "text-to-video":
                 print(f"Generating video with prompt: {prompt}")
                 video_output = pipeline(
@@ -163,6 +166,7 @@ class LTXVideoInvocation(BaseInvocation):
                     num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
+                    generator=generator,
                     max_sequence_length=250,
                 )
             elif self.task_type == "image-to-video":
@@ -176,12 +180,12 @@ class LTXVideoInvocation(BaseInvocation):
                     num_frames=int(self.num_frames),
                     num_inference_steps=self.num_inference_steps,
                     guidance_scale=self.guidance_scale,
+                    generator=generator,
                     max_sequence_length=250,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
 
-            # Process frames
             if video_output.frames:
                 video_frames = []
 
@@ -203,7 +207,6 @@ class LTXVideoInvocation(BaseInvocation):
 
                 print(f"Total frames collected: {len(video_frames)}")
 
-                # Save video
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
 
                 video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
