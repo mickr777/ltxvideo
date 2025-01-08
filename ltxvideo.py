@@ -7,6 +7,7 @@ from diffusers import (
     LTXImageToVideoPipeline,
     LTXVideoTransformer3DModel,
     GGUFQuantizationConfig,
+    AutoencoderKLLTXVideo,
 )
 from invokeai.invocation_api import (
     BaseInvocation,
@@ -96,11 +97,20 @@ class LTXVideoInvocation(BaseInvocation):
                 torch_dtype=torch.float16,
             )
             
+            vae = AutoencoderKLLTXVideo.from_pretrained(
+                "Lightricks/LTX-Video",
+                subfolder="vae",
+                torch_dtype=torch.float16,
+            )
+            
+            vae.enable_tiling()
+
             if self.task_type == "text-to-video":
                 pipeline = LTXPipeline.from_pretrained(
                     "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
+                    vae=vae,
                     torch_dtype=torch.float16,
                     device_map="balanced",
                 )
@@ -109,6 +119,7 @@ class LTXVideoInvocation(BaseInvocation):
                     "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
+                    vae=vae,
                     torch_dtype=torch.float16,
                     device_map="balanced",
                 )
