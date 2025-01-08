@@ -16,6 +16,7 @@ from invokeai.invocation_api import (
     StringOutput,
     ImageField,
 )
+from transformers import T5EncoderModel
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
@@ -89,10 +90,17 @@ class LTXVideoInvocation(BaseInvocation):
                 torch_dtype=torch.float16,
             )
 
+            text_encoder = T5EncoderModel.from_pretrained(
+                "mcmonkey/google_t5-v1_1-xxl_encoderonly",
+                device_map="balanced",
+                torch_dtype=torch.float16,
+            )
+            
             if self.task_type == "text-to-video":
                 pipeline = LTXPipeline.from_pretrained(
                     "Lightricks/LTX-Video",
                     transformer=transformer,
+                    text_encoder=text_encoder,
                     torch_dtype=torch.float16,
                     device_map="balanced",
                 )
@@ -100,6 +108,7 @@ class LTXVideoInvocation(BaseInvocation):
                 pipeline = LTXImageToVideoPipeline.from_pretrained(
                     "Lightricks/LTX-Video",
                     transformer=transformer,
+                    text_encoder=text_encoder,
                     torch_dtype=torch.float16,
                     device_map="balanced",
                 )
