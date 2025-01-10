@@ -92,8 +92,7 @@ class LTXVideoInvocation(BaseInvocation):
             )
 
             text_encoder = T5EncoderModel.from_pretrained(
-                "Lightricks/LTX-Video",
-                subfolder="text_encoder",
+                "mcmonkey/google_t5-v1_1-xxl_encoderonly",
                 device_map="balanced",
                 torch_dtype=torch.float16,
             )
