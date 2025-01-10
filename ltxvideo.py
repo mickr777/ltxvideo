@@ -114,6 +114,7 @@ class LTXVideoInvocation(BaseInvocation):
                     text_encoder=text_encoder,
                     vae=vae,
                     torch_dtype=torch.float16,
+                    device_map="balanced",
                 )
             elif self.task_type == "image-to-video":
                 pipeline = LTXImageToVideoPipeline.from_pretrained(
@@ -122,10 +123,12 @@ class LTXVideoInvocation(BaseInvocation):
                     text_encoder=text_encoder,
                     vae=vae,
                     torch_dtype=torch.float16,
+                    device_map="balanced",
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
 
+            pipeline.reset_device_map()
             pipeline.enable_model_cpu_offload()
             pipeline.enable_attention_slicing()
 
