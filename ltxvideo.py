@@ -23,7 +23,7 @@ from invokeai.invocation_api import (
     invocation,
 )
 from PIL import Image
-from transformers import T5EncoderModel
+from transformers import T5EncoderModel, T5Tokenizer
 
 
 @invocation(
@@ -31,7 +31,7 @@ from transformers import T5EncoderModel
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.2.1",
+    version="0.2.4",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -84,6 +84,7 @@ class LTXVideoInvocation(BaseInvocation):
     def initialize_pipeline(self):
         """Initializes the correct pipeline with quantized models."""
         try:
+            
             ckpt_path = "https://huggingface.co/city96/LTX-Video-gguf/blob/main/ltx-video-2b-v0.9-Q8_0.gguf"
 
             transformer = LTXVideoTransformer3DModel.from_single_file(
@@ -98,6 +99,15 @@ class LTXVideoInvocation(BaseInvocation):
                 device_map="balanced",
                 torch_dtype=torch.float16,
             )
+            text_encoder.config.max_length = 1024
+            text_encoder.model_max_length = 1024
+            
+            tokenizer = T5Tokenizer.from_pretrained(
+                "Lightricks/LTX-Video",
+                subfolder="tokenizer"
+            )
+            tokenizer.model_max_length = 1024
+            tokenizer.max_length = 1024
             
             vae = AutoencoderKLLTXVideo.from_pretrained(
                 "Lightricks/LTX-Video",
@@ -112,6 +122,7 @@ class LTXVideoInvocation(BaseInvocation):
                     "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
+                    tokenizer=tokenizer,
                     vae=vae,
                     torch_dtype=torch.float16,
                     device_map="balanced",
@@ -121,6 +132,7 @@ class LTXVideoInvocation(BaseInvocation):
                     "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
+                    tokenizer=tokenizer,
                     vae=vae,
                     torch_dtype=torch.float16,
                     device_map="balanced",
