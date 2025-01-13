@@ -1,4 +1,4 @@
-# pip install git+https://github.com/huggingface/diffusers
+# pip install diffusers==0.32.1
 
 from datetime import datetime
 from pathlib import Path
