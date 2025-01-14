@@ -86,7 +86,7 @@ class LTXVideoInvocation(BaseInvocation):
     default=False
     )
 
-    def initialize_pipeline(self):
+    def initialize_pipeline(self) -> LTXPipeline | LTXImageToVideoPipeline:
         """Initializes the correct pipeline with quantized models."""
         try:
             
@@ -188,7 +188,14 @@ class LTXVideoInvocation(BaseInvocation):
             print(f"Error loading image: {e}")
             return None
 
-    def generate_video(self, pipeline, image, prompt, negative_prompt):
+    def generate_video(
+        self,
+        pipeline: LTXPipeline | LTXImageToVideoPipeline,
+        image,
+        prompt,
+        negative_prompt,
+        context: InvocationContext,
+    ):
         """Generates video frames using the specified pipeline and directly exports to video."""
         try:
             print(f"Task type: {self.task_type}")
@@ -202,6 +209,22 @@ class LTXVideoInvocation(BaseInvocation):
 
             print(f"Generating video with {'image and ' if self.task_type == 'image-to-video' else ''}prompt: {prompt}")
 
+            # LTXPipeline.callback_on_step_end (`Callable`, *optional*):
+            #     A function that calls at the end of each denoising steps during the inference. The function is called
+            #     with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
+            #     callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
+            #     `callback_on_step_end_tensor_inputs`.
+
+            def callback_on_step_end(
+                self: LTXPipeline | LTXImageToVideoPipeline,
+                step: int,
+                timestep: int,
+                callback_kwargs: dict,
+            ):
+                context.util.signal_progress(
+                    "Generating video frames", step / self.num_inference_steps
+                )
+
             pipeline_kwargs = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -212,6 +235,7 @@ class LTXVideoInvocation(BaseInvocation):
                 "guidance_scale": self.guidance_scale,
                 "generator": generator,
                 "max_sequence_length": 1024,
+                "callback_on_step_end": callback_on_step_end,
             }
 
             if self.task_type == "image-to-video":
@@ -293,7 +317,7 @@ class LTXVideoInvocation(BaseInvocation):
                 return StringOutput(value="Failed to load input image.")
 
             return self.generate_video(
-                pipeline, image, self.prompt, self.negative_prompt
+                pipeline, image, self.prompt, self.negative_prompt, context
             )
 
         except Exception as e:
