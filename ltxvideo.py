@@ -216,7 +216,7 @@ class LTXVideoInvocation(BaseInvocation):
             #     `callback_on_step_end_tensor_inputs`.
 
             def callback_on_step_end(
-                self: LTXPipeline | LTXImageToVideoPipeline,
+                pipeline: LTXPipeline | LTXImageToVideoPipeline,
                 step: int,
                 timestep: int,
                 callback_kwargs: dict,
