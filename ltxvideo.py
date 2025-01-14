@@ -32,7 +32,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.3.1",
+    version="0.3.5",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -81,6 +81,10 @@ class LTXVideoInvocation(BaseInvocation):
         description="Path to save the generated video",
         default=str(Path(__file__).parent / "generated_videos"),
     )
+    save_last_frame: bool = InputField(
+    description="Save the last frame of the video as an uncompressed PNG file",
+    default=False
+    )
 
     def initialize_pipeline(self):
         """Initializes the correct pipeline with quantized models."""
@@ -108,7 +112,6 @@ class LTXVideoInvocation(BaseInvocation):
                 device_map="auto",
                 low_cpu_mem_usage=True
             )
-
             text_encoder.config.max_length = 1024
             text_encoder.model_max_length = 1024
             
@@ -123,8 +126,7 @@ class LTXVideoInvocation(BaseInvocation):
                 "Lightricks/LTX-Video",
                 subfolder="vae",
                 torch_dtype=torch.float16,
-            )
-            
+            )  
             vae.enable_tiling()
 
             if self.task_type == "text-to-video":
@@ -170,14 +172,15 @@ class LTXVideoInvocation(BaseInvocation):
             if image is None:
                 raise ValueError("Image retrieval failed. Image is None.")
 
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+                
             original_width, original_height = image.size
-
             scale = min(int(self.width) / original_width, int(self.height) / original_height)
-
             new_width = (int(original_width * scale) // 32) * 32
             new_height = (int(original_height * scale) // 32) * 32
+            image = image.resize((new_width, new_height), Image.LANCZOS)
 
-            image = image.resize((new_width, new_height))
             print(f"Resized image dimensions: {new_width}x{new_height}")
 
             return image
@@ -208,14 +211,13 @@ class LTXVideoInvocation(BaseInvocation):
                 "num_inference_steps": self.num_inference_steps,
                 "guidance_scale": self.guidance_scale,
                 "generator": generator,
-                "max_sequence_length": 1024
+                "max_sequence_length": 1024,
             }
 
             if self.task_type == "image-to-video":
                 pipeline_kwargs["image"] = image
 
             video_output = pipeline(**pipeline_kwargs)
-
 
             if video_output.frames:
                 video_frames = [
@@ -228,15 +230,13 @@ class LTXVideoInvocation(BaseInvocation):
                 ]
 
                 print(f"Total frames collected: {len(video_frames)}")
-
+                
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
 
                 video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
                 full_video_path = Path(self.output_path) / video_file_name
-                
-            if video_frames:
-                frame_height, frame_width = video_frames[0].shape[:2]
 
+                frame_height, frame_width = video_frames[0].shape[:2]
                 out = cv2.VideoWriter(
                     str(full_video_path),
                     cv2.VideoWriter_fourcc(*"mp4v"),
@@ -248,8 +248,23 @@ class LTXVideoInvocation(BaseInvocation):
                     out.write(frame)
 
                 out.release()
-
                 print(f"Video successfully saved to: {full_video_path}")
+
+                if self.save_last_frame:
+                    try:
+                        last_frame = video_frames[-1]
+                        last_frame_path = full_video_path.with_suffix(".png")
+                        cv2.imwrite(str(last_frame_path), last_frame)
+                        print(f"Last frame successfully saved as PNG to: {last_frame_path}")
+                        return StringOutput(
+                            value=(
+                                f"Video successfully saved to: {full_video_path}\n"
+                                f"Last frame saved as PNG to: {last_frame_path}"
+                            )
+                        )
+                    except Exception as e:
+                        print(f"Error saving the last frame as PNG: {e}")
+
                 return StringOutput(value=f"Video successfully saved to: {full_video_path}")
 
             print("No valid frames to export.")
