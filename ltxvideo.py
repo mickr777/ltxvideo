@@ -25,14 +25,14 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
-
+import traceback
 
 @invocation(
     "ltx_video_generation",
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.3.5",
+    version="0.3.6",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -207,13 +207,11 @@ class LTXVideoInvocation(BaseInvocation):
 
             generator = torch.manual_seed(self.seed) if self.seed > 0 else None
 
-            print(f"Generating video with {'image and ' if self.task_type == 'image-to-video' else ''}prompt: {prompt}")
-
-            # LTXPipeline.callback_on_step_end (`Callable`, *optional*):
-            #     A function that calls at the end of each denoising steps during the inference. The function is called
-            #     with the following arguments: `callback_on_step_end(self: DiffusionPipeline, step: int, timestep: int,
-            #     callback_kwargs: Dict)`. `callback_kwargs` will include a list of all tensors as specified by
-            #     `callback_on_step_end_tensor_inputs`.
+            print(
+                f"Generating video with "
+                f"{'image and ' if self.task_type == 'image-to-video' else ''}"
+                f"prompt: {prompt}"
+            )
 
             def callback_on_step_end(
                 pipeline: LTXPipeline | LTXImageToVideoPipeline,
@@ -221,10 +219,10 @@ class LTXVideoInvocation(BaseInvocation):
                 timestep: int,
                 callback_kwargs: dict,
             ):
-                context.util.signal_progress(
-                    "Generating video frames", step / self.num_inference_steps
-                )
-
+                context.util.signal_progress("Generating video frames", step / self.num_inference_steps)
+                
+                return callback_kwargs
+                
             pipeline_kwargs = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -254,7 +252,7 @@ class LTXVideoInvocation(BaseInvocation):
                 ]
 
                 print(f"Total frames collected: {len(video_frames)}")
-                
+
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
 
                 video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
@@ -297,6 +295,7 @@ class LTXVideoInvocation(BaseInvocation):
         except Exception as e:
             print(f"Error during video generation: {e}")
             return StringOutput(value=f"Error during video generation: {str(e)}")
+
 
     def invoke(self, context: InvocationContext) -> StringOutput:
         """Handles the invocation of video generation."""
