@@ -9,7 +9,6 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
-    GGUFQuantizationConfig,
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
@@ -25,14 +24,13 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
-import traceback
 
 @invocation(
     "ltx_video_generation",
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.3.6",
+    version="0.3.7",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -90,14 +88,12 @@ class LTXVideoInvocation(BaseInvocation):
         """Initializes the correct pipeline with quantized models."""
         try:
             
-            ckpt_path = "https://huggingface.co/city96/LTX-Video-gguf/blob/main/ltx-video-2b-v0.9-Q8_0.gguf"
-
-            transformer = LTXVideoTransformer3DModel.from_single_file(
-                ckpt_path,
-                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.float16),
+            transformer = LTXVideoTransformer3DModel.from_pretrained(
+                "Lightricks/LTX-Video",
+                subfolder="transformer",
                 torch_dtype=torch.float16,
             )
-
+            
             double_quant_config = DiffusersBitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
