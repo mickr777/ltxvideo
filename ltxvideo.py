@@ -32,7 +32,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.3.8",
+    version="0.3.9",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -76,6 +76,9 @@ class LTXVideoInvocation(BaseInvocation):
     )
     seed: int = InputField(
     description="seed for reproducibility. Set -1 for random behavior.", default=46
+    )
+    max_length: Literal["128", "256", "512", "1024"] = InputField(
+        description="Maximum length of the input prompt in tokens. (Higher values may result in longer encoding times)", default="256"
     )
     output_path: str = InputField(
         description="Path to save the generated video",
@@ -233,7 +236,7 @@ class LTXVideoInvocation(BaseInvocation):
                 "num_inference_steps": self.num_inference_steps,
                 "guidance_scale": self.guidance_scale,
                 "generator": generator,
-                "max_sequence_length": 1024,
+                "max_sequence_length": int(self.max_length),
                 "callback_on_step_end": callback_on_step_end,
             }
 
