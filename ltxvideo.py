@@ -1,4 +1,4 @@
-# pip install diffusers==0.32.1
+# pip install diffusers==0.32.2
 
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +14,7 @@ from diffusers import (
     LTXPipeline,
     LTXVideoTransformer3DModel,
 )
-from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
+from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig, FlowMatchEulerDiscreteScheduler
 from invokeai.invocation_api import (
     BaseInvocation,
     ImageField,
@@ -32,7 +32,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.3.9",
+    version="0.4.0",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -44,7 +44,7 @@ class LTXVideoInvocation(BaseInvocation):
     prompt: str = InputField(description="Text prompt for the video")
     negative_prompt: str = InputField(
         description="Negative prompt to avoid unwanted artifacts", 
-        default="low quality, blurry, distorted, watermark, artifacts, text artifacts, noisy, oversaturated, underexposed, overexposed, low resolution, jpeg artifacts, bad anatomy, malformed limbs, extra limbs, missing limbs, bad proportions, unnatural lighting, unrealistic details, unnatural skin texture, duplicate elements"
+        default="low quality, blurry, distorted, watermark, artifacts"
     )
     input_image: ImageField = InputField(
         description="Input image for image-to-video task", default=None
@@ -75,7 +75,11 @@ class LTXVideoInvocation(BaseInvocation):
         default=3.0,
     )
     seed: int = InputField(
-    description="seed for reproducibility. Set -1 for random behavior.", default=46
+    description="seed for reproducibility. Set -1 for random behavior.", default=42
+    )
+    shift: float = InputField(
+        description="Timestep shift parameter to control noise schedule dynamics", 
+        default=8.0
     )
     max_length: Literal["128", "256", "512", "1024"] = InputField(
         description="Maximum length of the input prompt in tokens. (Higher values may result in longer encoding times)", default="256"
@@ -133,36 +137,41 @@ class LTXVideoInvocation(BaseInvocation):
                 torch_dtype=torch.float16,
             )
             vae.enable_tiling()
+            
+            if self.task_type == "image-to-video":
+                scheduler = FlowMatchEulerDiscreteScheduler(
+                    base_shift=0.6,
+                    max_shift=2.5,
+                    shift_terminal=0.15,
+                    use_dynamic_shifting=True,
+                )
+            else:
+                scheduler = FlowMatchEulerDiscreteScheduler(
+                    shift=float(self.shift),
+                )
 
             context.util.signal_progress("Initializing pipeline...")
             if self.task_type == "text-to-video":
-                pipeline = LTXPipeline.from_pretrained(
-                    "Lightricks/LTX-Video",
+                pipeline = LTXPipeline(
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    torch_dtype=torch.float16,
-                    device_map="balanced",
+                    scheduler=scheduler,
                 )
             elif self.task_type == "image-to-video":
-                pipeline = LTXImageToVideoPipeline.from_pretrained(
-                    "Lightricks/LTX-Video",
+                pipeline = LTXImageToVideoPipeline(
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    torch_dtype=torch.float16,
-                    device_map="balanced",
+                    scheduler=scheduler,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
-            context.util.signal_progress("Pipeline initialized.")
 
             context.util.signal_progress("Optimizing pipeline...")
-            pipeline.reset_device_map()
             pipeline.enable_model_cpu_offload()
-            pipeline.enable_attention_slicing()
             context.util.signal_progress("Pipeline optimization complete.")
 
             return pipeline
