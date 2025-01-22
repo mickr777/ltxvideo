@@ -113,18 +113,6 @@ class LTXVideoInvocation(BaseInvocation):
         description="Automatically adjusts motion based on the video resolution. Useful for high-resolution videos.", 
         default=False
     )
-    use_karras_sigmas: bool = InputField(
-        description="Choose this for smoother, more natural-looking videos.", 
-        default=False
-    )
-    use_exponential_sigmas: bool = InputField(
-        description="Choose this for faster, more dramatic changes between frames.", 
-        default=False
-    )
-    use_beta_sigmas: bool = InputField(
-        description="Choose this for balanced motion and smooth transitions.", 
-        default=False
-    )
 
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         """Initializes the correct pipeline with quantized models and manual progress updates."""
@@ -178,9 +166,6 @@ class LTXVideoInvocation(BaseInvocation):
                 max_shift=self.max_shift,
                 shift_terminal=self.shift_terminal,
                 use_dynamic_shifting=self.use_dynamic_shifting,
-                use_karras_sigmas=self.use_karras_sigmas,
-                use_exponential_sigmas=self.use_exponential_sigmas,
-                use_beta_sigmas=self.use_beta_sigmas,
             )
            
             context.util.signal_progress("Initializing pipeline...")
