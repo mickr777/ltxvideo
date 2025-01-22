@@ -32,7 +32,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.4.0",
+    version="0.4.1",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -77,10 +77,6 @@ class LTXVideoInvocation(BaseInvocation):
     seed: int = InputField(
     description="seed for reproducibility. Set -1 for random behavior.", default=42
     )
-    shift: float = InputField(
-        description="Timestep shift parameter to control noise schedule dynamics", 
-        default=8.0
-    )
     max_length: Literal["128", "256", "512", "1024"] = InputField(
         description="Maximum length of the input prompt in tokens. (Higher values may result in longer encoding times)", default="256"
     )
@@ -92,6 +88,43 @@ class LTXVideoInvocation(BaseInvocation):
     description="Save the last frame of the video as an uncompressed PNG file",
     default=False
     )
+    
+    scheduler_settings: str = InputField(
+        description="--- Experimental Settings Below ---", 
+        default="--- Experimental Settings Below ---", 
+    )
+    shift: float = InputField(
+        description="Controls how much the video changes between frames. Higher values mean more noticeable motion.", 
+        default=1.0
+    )
+    base_shift: float = InputField(
+        description="Affects how stable the video starts. Lower values make the video less chaotic at the beginning.", 
+        default=0.5
+    )
+    max_shift: float = InputField(
+        description="The maximum amount of motion allowed. Higher values can make the video more dynamic.", 
+        default=1.5
+    )
+    shift_terminal: float = InputField(
+        description="Smooths out motion toward the end of the video. Lower values create calmer endings.", 
+        default=0.0
+    )
+    use_dynamic_shifting: bool = InputField(
+        description="Automatically adjusts motion based on the video resolution. Useful for high-resolution videos.", 
+        default=False
+    )
+    use_karras_sigmas: bool = InputField(
+        description="Choose this for smoother, more natural-looking videos.", 
+        default=False
+    )
+    use_exponential_sigmas: bool = InputField(
+        description="Choose this for faster, more dramatic changes between frames.", 
+        default=False
+    )
+    use_beta_sigmas: bool = InputField(
+        description="Choose this for balanced motion and smooth transitions.", 
+        default=False
+    )
 
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         """Initializes the correct pipeline with quantized models and manual progress updates."""
@@ -100,15 +133,15 @@ class LTXVideoInvocation(BaseInvocation):
             ckpt_path = "https://huggingface.co/city96/LTX-Video-gguf/blob/main/ltx-video-2b-v0.9-Q8_0.gguf"
             transformer = LTXVideoTransformer3DModel.from_single_file(
                 ckpt_path,
-                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.float16),
-                torch_dtype=torch.float16,
+                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+                torch_dtype=torch.bfloat16,
             )
 
             double_quant_config = DiffusersBitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
                 llm_int8_enable_fp32_cpu_offload=True,
-                bnb_4bit_compute_dtype=torch.float16,
+                bnb_4bit_compute_dtype=torch.bfloat16,
             )
 
             context.util.signal_progress("Loading text encoder...")
@@ -118,6 +151,7 @@ class LTXVideoInvocation(BaseInvocation):
                 quantization_config=double_quant_config,
                 device_map="auto",
                 low_cpu_mem_usage=True,
+                torch_dtype=torch.bfloat16,
             )
             text_encoder.config.max_length = 1024
             text_encoder.model_max_length = 1024
@@ -134,22 +168,21 @@ class LTXVideoInvocation(BaseInvocation):
             vae = AutoencoderKLLTXVideo.from_pretrained(
                 "Lightricks/LTX-Video",
                 subfolder="vae",
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
             )
             vae.enable_tiling()
-            
-            if self.task_type == "image-to-video":
-                scheduler = FlowMatchEulerDiscreteScheduler(
-                    base_shift=0.6,
-                    max_shift=2.5,
-                    shift_terminal=0.15,
-                    use_dynamic_shifting=True,
-                )
-            else:
-                scheduler = FlowMatchEulerDiscreteScheduler(
-                    shift=float(self.shift),
-                )
 
+            scheduler = FlowMatchEulerDiscreteScheduler(
+                shift=self.shift,
+                base_shift=self.base_shift,
+                max_shift=self.max_shift,
+                shift_terminal=self.shift_terminal,
+                use_dynamic_shifting=self.use_dynamic_shifting,
+                use_karras_sigmas=self.use_karras_sigmas,
+                use_exponential_sigmas=self.use_exponential_sigmas,
+                use_beta_sigmas=self.use_beta_sigmas,
+            )
+           
             context.util.signal_progress("Initializing pipeline...")
             if self.task_type == "text-to-video":
                 pipeline = LTXPipeline(
