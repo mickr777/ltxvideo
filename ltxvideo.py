@@ -22,6 +22,7 @@ from invokeai.invocation_api import (
     InvocationContext,
     StringOutput,
     invocation,
+    UIComponent,
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
@@ -41,10 +42,14 @@ class LTXVideoInvocation(BaseInvocation):
     task_type: Literal["text-to-video", "image-to-video"] = InputField(
         description="Select the generation task type", default="text-to-video"
     )
-    prompt: str = InputField(description="Text prompt for the video")
+    prompt: str = InputField(
+        description="Text prompt for the video",
+        ui_component=UIComponent.Textarea
+    )
     negative_prompt: str = InputField(
         description="Negative prompt to avoid unwanted artifacts", 
-        default="low quality, blurry, distorted, watermark, artifacts"
+        default="low quality, blurry, distorted, watermark, artifacts",
+        ui_component=UIComponent.Textarea
     )
     input_image: ImageField = InputField(
         description="Input image for image-to-video task", default=None
