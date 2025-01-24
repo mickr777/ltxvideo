@@ -9,20 +9,21 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
+    FlowMatchEulerDiscreteScheduler,
     GGUFQuantizationConfig,
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
 )
-from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig, FlowMatchEulerDiscreteScheduler
+from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from invokeai.invocation_api import (
     BaseInvocation,
     ImageField,
     InputField,
     InvocationContext,
     StringOutput,
-    invocation,
     UIComponent,
+    invocation,
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
@@ -33,7 +34,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.4.1",
+    version="0.4.3",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -120,28 +121,29 @@ class LTXVideoInvocation(BaseInvocation):
     )
 
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
-        """Initializes the correct pipeline with quantized models and manual progress updates."""
         try:
             context.util.signal_progress("Loading transformer model...")
-            ckpt_path = "https://huggingface.co/city96/LTX-Video-gguf/blob/main/ltx-video-2b-v0.9-Q8_0.gguf"
+            transformer_model_path = context.models.download_and_cache_model(
+                "https://huggingface.co/city96/LTX-Video-gguf/resolve/main/ltx-video-2b-v0.9-Q8_0.gguf"
+            )
             transformer = LTXVideoTransformer3DModel.from_single_file(
-                ckpt_path,
+                str(transformer_model_path),
                 quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
                 torch_dtype=torch.bfloat16,
             )
 
-            double_quant_config = DiffusersBitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                llm_int8_enable_fp32_cpu_offload=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-            )
-
             context.util.signal_progress("Loading text encoder...")
+            text_encoder_path = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/text_encoder"
+            )
             text_encoder = T5EncoderModel.from_pretrained(
-                "Lightricks/LTX-Video",
-                subfolder="text_encoder",
-                quantization_config=double_quant_config,
+                pretrained_model_name_or_path=str(text_encoder_path),
+                quantization_config=DiffusersBitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_use_double_quant=True,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                ),
                 device_map="auto",
                 low_cpu_mem_usage=True,
                 torch_dtype=torch.bfloat16,
@@ -150,17 +152,21 @@ class LTXVideoInvocation(BaseInvocation):
             text_encoder.model_max_length = 1024
 
             context.util.signal_progress("Loading tokenizer...")
+            tokenizer_path = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/tokenizer"
+            )
             tokenizer = T5Tokenizer.from_pretrained(
-                "Lightricks/LTX-Video",
-                subfolder="tokenizer",
+                pretrained_model_name_or_path=str(tokenizer_path),
             )
             tokenizer.model_max_length = 1024
             tokenizer.max_length = 1024
 
             context.util.signal_progress("Loading VAE...")
+            vae_path = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/vae"
+            )
             vae = AutoencoderKLLTXVideo.from_pretrained(
-                "Lightricks/LTX-Video",
-                subfolder="vae",
+                pretrained_model_name_or_path=str(vae_path),
                 torch_dtype=torch.bfloat16,
             )
             vae.enable_tiling()
@@ -172,8 +178,7 @@ class LTXVideoInvocation(BaseInvocation):
                 shift_terminal=self.shift_terminal,
                 use_dynamic_shifting=self.use_dynamic_shifting,
             )
-           
-            context.util.signal_progress("Initializing pipeline...")
+
             if self.task_type == "text-to-video":
                 pipeline = LTXPipeline(
                     transformer=transformer,
@@ -201,8 +206,7 @@ class LTXVideoInvocation(BaseInvocation):
 
         except Exception as e:
             print(f"Error initializing pipeline: {e}")
-            return None
-
+            raise
 
     def load_image(self, context):
         """Loads and preprocesses the input image while preserving the aspect ratio."""
@@ -228,6 +232,7 @@ class LTXVideoInvocation(BaseInvocation):
             print(f"Error loading image: {e}")
             return None
 
+    
     def generate_video(
         self,
         pipeline: LTXPipeline | LTXImageToVideoPipeline,
