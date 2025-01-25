@@ -9,13 +9,12 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
-    FlowMatchEulerDiscreteScheduler,
     GGUFQuantizationConfig,
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
+    BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
 )
-from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from invokeai.invocation_api import (
     BaseInvocation,
     ImageField,
@@ -34,7 +33,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.4.3",
+    version="0.4.4",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -49,7 +48,7 @@ class LTXVideoInvocation(BaseInvocation):
     )
     negative_prompt: str = InputField(
         description="Negative prompt to avoid unwanted artifacts", 
-        default="low quality, blurry, distorted, watermark, artifacts",
+        default="worst quality, inconsistent motion, blurry, jittery, distorted",
         ui_component=UIComponent.Textarea
     )
     input_image: ImageField = InputField(
@@ -59,22 +58,22 @@ class LTXVideoInvocation(BaseInvocation):
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544", 
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992", 
         "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Width of the generated video", default="640")
+    ] = InputField(description="Width of the generated video", default="768")
     height: Literal[
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544",
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992",
           "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Height of the generated video", default="640")
+    ] = InputField(description="Height of the generated video", default="512")
     
     num_frames: Literal[
         "9", "17", "25", "33", "41", "49", "57", "65", "73", "81", "89", "97", "105", "113", "121", "129",
         "137", "145", "153", "161", "169", "177", "185", "193", "201", "209", "217", "225", "233", "241", "249", "257",
-    ] = InputField(description="Number of frames in the video", default="105")
+    ] = InputField(description="Number of frames in the video", default="161")
     fps: int = InputField(
         description="Frames per second for the generated video", default=24
     )
     num_inference_steps: int = InputField(
-        description="Number of inference steps for video generation", default=30
+        description="Number of inference steps for video generation", default=50
     )
     guidance_scale: float = InputField(
         description="Guidance scale for classifier-free diffusion. Higher values = stronger prompt adherence, lower values = better image quality.",
@@ -95,31 +94,18 @@ class LTXVideoInvocation(BaseInvocation):
     default=False
     )
     
-    scheduler_settings: str = InputField(
-        description="--- Experimental Settings Below ---", 
-        default="--- Experimental Settings Below ---", 
+    i2v_settings: str = InputField(
+            description="-- Add Noise to image to help with movement --", 
+            default="-- Add Noise to image to help with movement --", 
     )
-    shift: float = InputField(
-        description="Controls how much the video changes between frames. Higher values mean more noticeable motion.", 
-        default=1.0
+    apply_compression: bool = InputField(
+        description="Apply compression artifacts to simulate video-like input", default=False
     )
-    base_shift: float = InputField(
-        description="Affects how stable the video starts. Lower values make the video less chaotic at the beginning.", 
-        default=0.5
+    compression_intensity: int = InputField(
+        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=20
     )
-    max_shift: float = InputField(
-        description="The maximum amount of motion allowed. Higher values can make the video more dynamic.", 
-        default=1.5
-    )
-    shift_terminal: float = InputField(
-        description="Smooths out motion toward the end of the video. Lower values create calmer endings.", 
-        default=0.0
-    )
-    use_dynamic_shifting: bool = InputField(
-        description="Automatically adjusts motion based on the video resolution. Useful for high-resolution videos.", 
-        default=False
-    )
-
+    
+    
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
             context.util.signal_progress("Loading transformer model...")
@@ -135,6 +121,7 @@ class LTXVideoInvocation(BaseInvocation):
             context.util.signal_progress("Loading text encoder...")
             text_encoder_path = context.models.download_and_cache_model(
                 source="Lightricks/LTX-Video::/text_encoder"
+                
             )
             text_encoder = T5EncoderModel.from_pretrained(
                 pretrained_model_name_or_path=str(text_encoder_path),
@@ -171,29 +158,21 @@ class LTXVideoInvocation(BaseInvocation):
             )
             vae.enable_tiling()
 
-            scheduler = FlowMatchEulerDiscreteScheduler(
-                shift=self.shift,
-                base_shift=self.base_shift,
-                max_shift=self.max_shift,
-                shift_terminal=self.shift_terminal,
-                use_dynamic_shifting=self.use_dynamic_shifting,
-            )
-
             if self.task_type == "text-to-video":
-                pipeline = LTXPipeline(
+                pipeline = LTXPipeline.from_pretrained(
+                    "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    scheduler=scheduler,
                 )
             elif self.task_type == "image-to-video":
-                pipeline = LTXImageToVideoPipeline(
+                pipeline = LTXImageToVideoPipeline.from_pretrained(
+                    "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    scheduler=scheduler,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
@@ -209,7 +188,7 @@ class LTXVideoInvocation(BaseInvocation):
             raise
 
     def load_image(self, context):
-        """Loads and preprocesses the input image while preserving the aspect ratio."""
+        
         try:
             if not self.input_image:
                 raise ValueError("No input image provided.")
@@ -220,17 +199,37 @@ class LTXVideoInvocation(BaseInvocation):
 
             if image.mode != "RGB":
                 image = image.convert("RGB")
-                
+
             original_width, original_height = image.size
             scale = min(int(self.width) / original_width, int(self.height) / original_height)
             new_width = (int(original_width * scale) // 32) * 32
             new_height = (int(original_height * scale) // 32) * 32
             image = image.resize((new_width, new_height), Image.LANCZOS)
 
+            if self.apply_compression:
+                image = self.add_compression_artifacts(image, self.compression_intensity)
+
             return image
+
         except Exception as e:
             print(f"Error loading image: {e}")
             return None
+
+    def add_compression_artifacts(self, image, intensity):
+        
+        try:
+            image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100 - intensity]
+            _, encoded_image = cv2.imencode('.jpg', image_cv, encode_param)
+            decoded_image = cv2.imdecode(encoded_image, cv2.IMREAD_COLOR)
+
+            compressed_image = Image.fromarray(cv2.cvtColor(decoded_image, cv2.COLOR_BGR2RGB))
+            return compressed_image
+
+        except Exception as e:
+            print(f"Error adding compression artifacts: {e}")
+        return image
 
     
     def generate_video(
