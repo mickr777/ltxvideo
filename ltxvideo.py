@@ -107,8 +107,11 @@ class LTXVideoInvocation(BaseInvocation):
     
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
-            context.util.signal_progress("Loading transformer model...")         
-            single_file_url = "https://huggingface.co/Lightricks/LTX-Video/ltx-video-2b-v0.9.1.safetensors"
+            context.util.signal_progress("Loading transformer model...")
+            single_file_url = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/ltx-video-2b-v0.9.1.safetensors"
+            )
+
             transformer = LTXVideoTransformer3DModel.from_single_file(
                 str(single_file_url),
                 torch_dtype=torch.bfloat16,
