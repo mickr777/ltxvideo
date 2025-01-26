@@ -9,12 +9,11 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
-    GGUFQuantizationConfig,
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
-    BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
 )
+from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from invokeai.invocation_api import (
     BaseInvocation,
     ImageField,
@@ -58,17 +57,17 @@ class LTXVideoInvocation(BaseInvocation):
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544", 
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992", 
         "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Width of the generated video", default="768")
+    ] = InputField(description="Width of the generated video", default="640")
     height: Literal[
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544",
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992",
           "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Height of the generated video", default="512")
+    ] = InputField(description="Height of the generated video", default="640")
     
     num_frames: Literal[
         "9", "17", "25", "33", "41", "49", "57", "65", "73", "81", "89", "97", "105", "113", "121", "129",
         "137", "145", "153", "161", "169", "177", "185", "193", "201", "209", "217", "225", "233", "241", "249", "257",
-    ] = InputField(description="Number of frames in the video", default="161")
+    ] = InputField(description="Number of frames in the video", default="105")
     fps: int = InputField(
         description="Frames per second for the generated video", default=24
     )
@@ -95,8 +94,8 @@ class LTXVideoInvocation(BaseInvocation):
     )
     
     i2v_settings: str = InputField(
-            description="-- Add Noise to image to help with movement --", 
-            default="-- Add Noise to image to help with movement --", 
+            description="-compression Noise to help with I2V movement-", 
+            default="-compression Noise to help with I2V movement-", 
     )
     apply_compression: bool = InputField(
         description="Apply compression artifacts to simulate video-like input", default=False
@@ -108,13 +107,10 @@ class LTXVideoInvocation(BaseInvocation):
     
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
-            context.util.signal_progress("Loading transformer model...")
-            transformer_model_path = context.models.download_and_cache_model(
-                "https://huggingface.co/city96/LTX-Video-gguf/resolve/main/ltx-video-2b-v0.9-Q8_0.gguf"
-            )
+            context.util.signal_progress("Loading transformer model...")         
+            single_file_url = "https://huggingface.co/Lightricks/LTX-Video/ltx-video-2b-v0.9.1.safetensors"
             transformer = LTXVideoTransformer3DModel.from_single_file(
-                str(transformer_model_path),
-                quantization_config=GGUFQuantizationConfig(compute_dtype=torch.bfloat16),
+                str(single_file_url),
                 torch_dtype=torch.bfloat16,
             )
 
@@ -240,7 +236,7 @@ class LTXVideoInvocation(BaseInvocation):
         negative_prompt,
         context: InvocationContext,
     ) -> StringOutput:
-        """Generates video frames using the specified pipeline and directly exports to video."""
+        
         try:
             print(f"Task type: {self.task_type}")
 
@@ -337,7 +333,7 @@ class LTXVideoInvocation(BaseInvocation):
 
 
     def invoke(self, context: InvocationContext) -> StringOutput:
-        """Handles the invocation of video generation."""
+        
         try:
             context.util.signal_progress("Initializing the pipeline...")
             pipeline = self.initialize_pipeline(context)
