@@ -33,7 +33,7 @@ from transformers import T5EncoderModel, T5Tokenizer
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.4.4",
+    version="0.4.5",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -102,7 +102,7 @@ class LTXVideoInvocation(BaseInvocation):
         description="Apply compression artifacts to simulate video-like input", default=False
     )
     compression_intensity: int = InputField(
-        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=20
+        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=40
     )
     
     
