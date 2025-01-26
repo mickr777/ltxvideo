@@ -73,7 +73,7 @@ class LTXVideoInvocation(BaseInvocation):
         description="Frames per second for the generated video", default=24
     )
     num_inference_steps: int = InputField(
-        description="Number of inference steps for video generation", default=50
+        description="Number of inference steps for video generation", default=30
     )
     guidance_scale: float = InputField(
         description="Guidance scale for classifier-free diffusion. Higher values = stronger prompt adherence, lower values = better image quality.",
@@ -102,7 +102,7 @@ class LTXVideoInvocation(BaseInvocation):
         description="Apply compression artifacts to simulate video-like input", default=False
     )
     compression_intensity: int = InputField(
-        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=40
+        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=20
     )
     
     
