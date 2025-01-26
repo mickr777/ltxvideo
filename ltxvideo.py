@@ -12,7 +12,6 @@ from diffusers import (
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
-    FlowMatchEulerDiscreteScheduler,
 )
 from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from invokeai.invocation_api import (
@@ -109,81 +108,77 @@ class LTXVideoInvocation(BaseInvocation):
     def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
             context.util.signal_progress("Loading transformer model...")
-            transformer_path = context.models.download_and_cache_model(
-                source="a-r-r-o-w/LTX-Video-0.9.1-diffusers::/transformer"
+            single_file_url = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/ltx-video-2b-v0.9.1.safetensors"
             )
-            transformer = LTXVideoTransformer3DModel.from_pretrained(
-                pretrained_model_name_or_path=str(transformer_path),
-                torch_dtype=torch.float16,
+
+            transformer = LTXVideoTransformer3DModel.from_single_file(
+                str(single_file_url),
+                torch_dtype=torch.bfloat16,
             )
 
             context.util.signal_progress("Loading text encoder...")
             text_encoder_path = context.models.download_and_cache_model(
-                source="a-r-r-o-w/LTX-Video-0.9.1-diffusers::/text_encoder"
+                source="Lightricks/LTX-Video::/text_encoder"
+                
             )
             text_encoder = T5EncoderModel.from_pretrained(
                 pretrained_model_name_or_path=str(text_encoder_path),
                 quantization_config=DiffusersBitsAndBytesConfig(
                     load_in_4bit=True,
                     bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=torch.float16,
+                    llm_int8_enable_fp32_cpu_offload=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
                 ),
                 device_map="auto",
                 low_cpu_mem_usage=True,
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
             )
             text_encoder.config.max_length = 1024
             text_encoder.model_max_length = 1024
 
             context.util.signal_progress("Loading tokenizer...")
             tokenizer_path = context.models.download_and_cache_model(
-                source="a-r-r-o-w/LTX-Video-0.9.1-diffusers::/tokenizer"
+                source="Lightricks/LTX-Video::/tokenizer"
             )
-            tokenizer = T5Tokenizer.from_pretrained(pretrained_model_name_or_path=str(tokenizer_path))
+            tokenizer = T5Tokenizer.from_pretrained(
+                pretrained_model_name_or_path=str(tokenizer_path),
+            )
             tokenizer.model_max_length = 1024
             tokenizer.max_length = 1024
-            
-            scheduler_path=context.models.download_and_cache_model(
-                    source="a-r-r-o-w/LTX-Video-0.9.1-diffusers::/scheduler"
-                )
-            scheduler=FlowMatchEulerDiscreteScheduler.from_pretrained(
-                pretrained_model_name_or_path=str(scheduler_path),
-            )
 
             context.util.signal_progress("Loading VAE...")
             vae_path = context.models.download_and_cache_model(
-                source="a-r-r-o-w/LTX-Video-0.9.1-diffusers::/vae"
+                source="Lightricks/LTX-Video::/vae"
             )
             vae = AutoencoderKLLTXVideo.from_pretrained(
                 pretrained_model_name_or_path=str(vae_path),
-                torch_dtype=torch.float16,
+                torch_dtype=torch.bfloat16,
             )
             vae.enable_tiling()
 
-            context.util.signal_progress("Initializing pipeline...")
             if self.task_type == "text-to-video":
                 pipeline = LTXPipeline.from_pretrained(
-                    "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
+                    "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
-                    scheduler=scheduler,
                     vae=vae,
                 )
             elif self.task_type == "image-to-video":
                 pipeline = LTXImageToVideoPipeline.from_pretrained(
-                    "a-r-r-o-w/LTX-Video-0.9.1-diffusers",
+                    "Lightricks/LTX-Video",
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
-                    scheduler=scheduler,
                     vae=vae,
-                    
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
-            
+
+            context.util.signal_progress("Optimizing pipeline...")
             pipeline.enable_model_cpu_offload()
+            context.util.signal_progress("Pipeline optimization complete.")
 
             return pipeline
 
@@ -253,11 +248,7 @@ class LTXVideoInvocation(BaseInvocation):
             else:
                 output_width, output_height = int(self.width), int(self.height)
 
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-            generator = torch.Generator(device=device)
-            if self.seed > 0:
-                generator.manual_seed(self.seed)
+            generator = torch.manual_seed(self.seed) if self.seed > 0 else None
 
             context.util.signal_progress(f"Generating Video With Prompt: {prompt}")
 
