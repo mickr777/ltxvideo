@@ -300,7 +300,7 @@ class LTXVideoInvocation(BaseInvocation):
                 frame_height, frame_width = video_frames[0].shape[:2]
                 out = cv2.VideoWriter(
                     str(full_video_path),
-                    cv2.VideoWriter_fourcc(*"mp4v"),
+                    cv2.VideoWriter_fourcc(*"MPG4"),
                     self.fps,
                     (frame_width, frame_height),
                 )
