@@ -297,6 +297,16 @@ class LTXVideoInvocation(BaseInvocation):
             generator = torch.manual_seed(self.seed) if self.seed > 0 else None
 
             context.util.signal_progress(f"Generating Video With Prompt: {prompt}")
+            
+            def callback_on_step_end(
+                pipeline: LTXPipeline | LTXImageToVideoPipeline,
+                step: int,
+                timestep: int,
+                callback_kwargs: dict,
+            ):
+                progress = min((step + 1) / self.num_inference_steps, 1.0)
+                context.util.signal_progress(f"Step {step + 1}/{self.num_inference_steps}", progress)
+                return callback_kwargs
 
             pipeline_kwargs = {
                 "prompt": prompt,
@@ -308,6 +318,7 @@ class LTXVideoInvocation(BaseInvocation):
                 "guidance_scale": self.guidance_scale,
                 "generator": generator,
                 "max_sequence_length": int(self.max_length),
+                "callback_on_step_end": callback_on_step_end,
             }
 
             if self.task_type == "image-to-video":
