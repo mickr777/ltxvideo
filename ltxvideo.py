@@ -12,8 +12,8 @@ from diffusers import (
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
+    BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
 )
-from diffusers import BitsAndBytesConfig as DiffusersBitsAndBytesConfig
 from invokeai.invocation_api import (
     BaseInvocation,
     ImageField,
@@ -25,14 +25,14 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
-
+from invokeai.app.invocations.upscale import ESRGANInvocation
 
 @invocation(
     "ltx_video_generation",
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.4.5",
+    version="0.5.0",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -102,6 +102,18 @@ class LTXVideoInvocation(BaseInvocation):
     )
     compression_intensity: int = InputField(
         description="Compression intensity (higher = more compression artifacts, 0 = none)", default=20
+    )
+    
+    
+    Upscale_settings: str = InputField(
+            description="-Upscale the output video-", 
+            default="-Upscale the output video-", 
+    )
+    upscale_frames: bool = InputField(
+        description="Enable upscaling of video frames after generation", default=False
+    )
+    upscale_model: Literal["RealESRGAN_x4plus.pth", "ealESRGAN_x4plus_anime_6B.pth", "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth" , "RealESRGAN_x2plus.pth" ] = InputField(
+        description="Upscale Model Selection", default="RealESRGAN_x2plus.pth"
     )
     
     
@@ -230,7 +242,39 @@ class LTXVideoInvocation(BaseInvocation):
             print(f"Error adding compression artifacts: {e}")
         return image
 
-    
+    def upscale_video_frames(
+        self,
+        video_frames,
+        esrgan_invocation: ESRGANInvocation,
+        model_name: str,
+        tile_size: int,
+        context: InvocationContext,
+    ):
+        upscaled_frames = []
+        for frame in video_frames:
+            try:
+                pil_frame = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+                esrgan_invocation.image = ImageField(image_name="temp_frame")
+                esrgan_invocation.model_name = model_name
+                esrgan_invocation.tile_size = tile_size
+
+                temp_image_dto = context.images.save(image=pil_frame)
+
+                esrgan_invocation.image.image_name = temp_image_dto.image_name
+
+                upscaled_output = esrgan_invocation.invoke(context)
+
+                upscaled_image = context.images.get_pil(upscaled_output.image.image_name)
+
+                upscaled_frames.append(cv2.cvtColor(np.array(upscaled_image), cv2.COLOR_RGB2BGR))
+
+            except Exception as e:
+                print(f"Error during frame upscaling: {e}")
+
+        return upscaled_frames
+
+
     def generate_video(
         self,
         pipeline: LTXPipeline | LTXImageToVideoPipeline,
@@ -239,7 +283,9 @@ class LTXVideoInvocation(BaseInvocation):
         negative_prompt,
         context: InvocationContext,
     ) -> StringOutput:
-        
+        """
+        Generates video frames using the LTX pipeline and optionally upscales them.
+        """
         try:
             print(f"Task type: {self.task_type}")
 
@@ -252,16 +298,6 @@ class LTXVideoInvocation(BaseInvocation):
 
             context.util.signal_progress(f"Generating Video With Prompt: {prompt}")
 
-            def callback_on_step_end(
-                pipeline: LTXPipeline | LTXImageToVideoPipeline,
-                step: int,
-                timestep: int,
-                callback_kwargs: dict,
-            ):
-                progress = min((step + 1) / self.num_inference_steps, 1.0)
-                context.util.signal_progress(f"Step {step + 1}/{self.num_inference_steps}", progress)
-                return callback_kwargs
-
             pipeline_kwargs = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
@@ -272,7 +308,6 @@ class LTXVideoInvocation(BaseInvocation):
                 "guidance_scale": self.guidance_scale,
                 "generator": generator,
                 "max_sequence_length": int(self.max_length),
-                "callback_on_step_end": callback_on_step_end,
             }
 
             if self.task_type == "image-to-video":
@@ -293,13 +328,12 @@ class LTXVideoInvocation(BaseInvocation):
                 print(f"Total frames collected: {len(video_frames)}")
 
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
-
-                video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-                full_video_path = Path(self.output_path) / video_file_name
+                original_video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.mp4"
+                original_video_path = Path(self.output_path) / original_video_file_name
 
                 frame_height, frame_width = video_frames[0].shape[:2]
                 out = cv2.VideoWriter(
-                    str(full_video_path),
+                    str(original_video_path),
                     cv2.VideoWriter_fourcc(*"MPG4"),
                     self.fps,
                     (frame_width, frame_height),
@@ -307,26 +341,50 @@ class LTXVideoInvocation(BaseInvocation):
 
                 for frame in video_frames:
                     out.write(frame)
-
                 out.release()
-                print(f"Video successfully saved to: {full_video_path}")
+                print(f"Original video successfully saved to: {original_video_path}")
 
-                if self.save_last_frame:
-                    try:
-                        last_frame = video_frames[-1]
-                        last_frame_path = full_video_path.with_suffix(".png")
-                        cv2.imwrite(str(last_frame_path), last_frame)
-                        print(f"Last frame successfully saved as PNG to: {last_frame_path}")
-                        return StringOutput(
-                            value=(
-                                f"Video successfully saved to: {full_video_path}\n"
-                                f"Last frame saved as PNG to: {last_frame_path}"
-                            )
-                        )
-                    except Exception as e:
-                        print(f"Error saving the last frame as PNG: {e}")
-                        
-                return StringOutput(value=f"Video successfully saved to: {full_video_path}")
+            if self.upscale_frames:
+                model_name = self.upscale_model
+
+                if model_name in ["RealESRGAN_x4plus.pth", "ealESRGAN_x4plus_anime_6B.pth", "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth"]:
+                    scale_factor = 4
+                elif model_name == "RealESRGAN_x2plus.pth":
+                    scale_factor = 2
+                else:
+                    raise ValueError(f"Unsupported model: {model_name}")
+
+                esrgan_invocation = ESRGANInvocation()
+
+                upscaled_frames = self.upscale_video_frames(
+                    video_frames,
+                    esrgan_invocation,
+                    model_name=model_name,
+                    tile_size=400,
+                    context=context,
+                )
+
+                if upscaled_frames:
+                    upscale_video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model_name}_upscaled.mp4"
+                    upscale_video_path = Path(self.output_path) / upscale_video_file_name
+
+                    upscale_height, upscale_width = (
+                        frame_height * scale_factor,
+                        frame_width * scale_factor,
+                    )
+                    upscale_out = cv2.VideoWriter(
+                        str(upscale_video_path),
+                        cv2.VideoWriter_fourcc(*"MPG4"),
+                        self.fps,
+                        (upscale_width, upscale_height),
+                    )
+                    for frame in upscaled_frames:
+                        upscale_out.write(frame)
+                    upscale_out.release()
+                    print(f"Upscaled video successfully saved to: {upscale_video_path}")
+
+
+                return StringOutput(value=f"Original video saved to: {original_video_path}")
 
             return StringOutput(value="No valid frames generated.")
 
@@ -334,7 +392,7 @@ class LTXVideoInvocation(BaseInvocation):
             print(f"Error during video generation: {e}")
             return StringOutput(value=f"Error during video generation: {str(e)}")
 
-
+        
     def invoke(self, context: InvocationContext) -> StringOutput:
         
         try:
