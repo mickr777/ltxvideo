@@ -426,7 +426,11 @@ class LTXVideoInvocation(BaseInvocation):
             else:
                 output_width, output_height = int(self.width), int(self.height)
 
-            generator = torch.manual_seed(self.seed) if self.seed > 0 else None
+            if self.seed > 0:
+                generator = torch.Generator(device="cuda")
+                generator.manual_seed(self.seed)
+            else:
+                generator = None
 
             context.util.signal_progress(f"Generating Video With Prompt: {prompt}")
 
