@@ -10,18 +10,24 @@ Please note that this may cause other issues in invoke (so far I have not notice
 
 ### Fields and Descriptions
 
-| Field                  | Description                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| task_type              | Specifies the generation task type: `text-to-video` or `image-to-video`.                         |
-| prompt                 | Text prompt guiding the video generation.                                                       |
-| negative_prompt        | Negative prompt to avoid unwanted artifacts in the video (e.g., blurry, noisy, low quality).     |
-| input_image            | Input image for the `image-to-video` task (ignored for `text-to-video`).                         |
-| width                  | Width of the generated video in pixels.                                                         |
-| height                 | Height of the generated video in pixels.                                                        |
-| num_frames             | Number of frames to generate for the video.                                                     |
-| fps                    | Frames per second for the output video.                                                         |
-| num_inference_steps    | Number of denoising steps during video generation (higher values improve quality).               |
-| guidance_scale         | Controls adherence to the prompt (higher values = stronger adherence, lower = better quality).   |
-| seed                   | Seed for reproducibility (use -1 for random behavior).                                           |
-| output_path            | Path to save the generated video.                                                               |
-| save_last_frame        | Option to save the last frame of the video as an uncompressed PNG file.                          |
+| Field                   | Description                                                                                     |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| task_type               | Select the generation task type: `text-to-video` or `image-to-video`. Default is `text-to-video`. |
+| prompt                  | Text prompt for the video.                                                                     |
+| negative_prompt         | Negative prompt to avoid unwanted artifacts, such as "worst quality, inconsistent motion, blurry, jittery, distorted." |
+| input_image             | Input image for the `image-to-video` task (ignored for `text-to-video`). Default is `None`.     |
+| width                   | Width of the generated video in pixels (selectable from predefined values, e.g., 128 to 1280). Default is `640`. |
+| height                  | Height of the generated video in pixels (selectable from predefined values, e.g., 128 to 1280). Default is `640`. |
+| num_frames              | Number of frames in the video (selectable from predefined values, e.g., 9 to 257). Default is `105`. |
+| fps                     | Frames per second for the generated video. Default is `24`.                                     |
+| num_inference_steps     | Number of inference steps for video generation. Default is `30`.                                |
+| guidance_scale          | Guidance scale for classifier-free diffusion. Higher values = stronger prompt adherence, lower values = better image quality. Default is `3.0`. |
+| seed                    | Seed for reproducibility. Use `-1` for random behavior. Default is `42`.                        |
+| max_length              | Maximum length of the input prompt in tokens (higher values may result in longer encoding times). Default is `256`. |
+| output_path             | Path to save the generated video. Default is a `generated_videos` directory in the current file's path. |
+| save_last_frame         | Option to save the last frame of the video as an uncompressed PNG file. Default is `False`.      |
+| apply_compression       | Enable compression artifacts to simulate video-like input. Default is `False`.                  |
+| compression_intensity   | Compression intensity level (higher = more compression artifacts, 0 = none). Default is `20`.    |
+| upscale_frames          | Enable upscaling of video frames after generation. Default is `False`.                          |
+| upscale_model           | Upscale model selection. Default is `RealESRGAN_x2plus.pth`.                                    |
+| scheduler_settings_override | Link a scheduler settings node to override default values. Default is an empty list (`[]`).  |
