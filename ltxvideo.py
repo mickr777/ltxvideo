@@ -1,5 +1,6 @@
 # pip install diffusers==0.32.2
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -9,30 +10,114 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
+    FlowMatchEulerDiscreteScheduler,
     LTXImageToVideoPipeline,
     LTXPipeline,
     LTXVideoTransformer3DModel,
+)
+from diffusers import (
     BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
 )
+from invokeai.app.invocations.upscale import ESRGANInvocation
 from invokeai.invocation_api import (
     BaseInvocation,
+    BaseInvocationOutput,
     ImageField,
     InputField,
     InvocationContext,
+    OutputField,
     StringOutput,
     UIComponent,
     invocation,
+    invocation_output,
+    Input,
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
-from invokeai.app.invocations.upscale import ESRGANInvocation
+
+
+@invocation_output("scheduler_settings_output")
+class SchedulerSettingsOutput(BaseInvocationOutput):
+    """Scheduler Settings Output"""
+
+    settings: list[str] = OutputField(
+        description="Consolidated scheduler settings as a list."
+    )
+    
+@invocation(
+    "ltx_scheduler_settings",
+    title="ltx Scheduler Settings Override",
+    tags=["scheduler", "configuration"],
+    category="scheduler",
+    version="0.1.0",
+)
+class LtxSchedulerSettingsInvocation(BaseInvocation):
+    """
+    Node for defining and outputting scheduler settings.
+    """
+
+    base_image_seq_len: int = InputField(
+        description="Base image sequence length.", default=1024
+    )
+    base_shift: float = InputField(
+        description="Base amount of shift to apply.", default=0.95
+    )
+    max_image_seq_len: int = InputField(
+        description="Maximum image sequence length.", default=4096
+    )
+    max_shift: float = InputField(
+        description="Maximum amount of shift to apply.", default=2.05
+    )
+    num_train_timesteps: int = InputField(
+        description="Number of training timesteps.", default=1000
+    )
+    shift: float = InputField(
+        description="Shift value for timestep control.", default=1.0
+    )
+    shift_terminal: float = InputField(description="Terminal shift value.", default=0.1)
+    use_karras_sigmas: bool = InputField(
+        description="Enable Karras sigmas for improved quality.", default=False
+    )
+    invert_sigmas: bool = InputField(
+        description="Enable inversion of sigmas.", default=False
+    )
+    use_beta_sigmas: bool = InputField(
+        description="Enable beta sigmas for training.", default=False
+    )
+    use_dynamic_shifting: bool = InputField(
+        description="Enable dynamic shifting during training.", default=True
+    )
+    use_exponential_sigmas: bool = InputField(
+        description="Enable exponential sigmas.", default=False
+    )
+
+    def invoke(self, context: InvocationContext) -> SchedulerSettingsOutput:
+        """
+        Outputs all scheduler settings as a consolidated list of key:value strings.
+        """
+        consolidated_settings = [
+            f"base_image_seq_len:{self.base_image_seq_len}",
+            f"base_shift:{self.base_shift}",
+            f"max_image_seq_len:{self.max_image_seq_len}",
+            f"max_shift:{self.max_shift}",
+            f"num_train_timesteps:{self.num_train_timesteps}",
+            f"shift:{self.shift}",
+            f"shift_terminal:{self.shift_terminal}",
+            f"use_karras_sigmas:{self.use_karras_sigmas}",
+            f"invert_sigmas:{self.invert_sigmas}",
+            f"use_beta_sigmas:{self.use_beta_sigmas}",
+            f"use_dynamic_shifting:{self.use_dynamic_shifting}",
+            f"use_exponential_sigmas:{self.use_exponential_sigmas}",
+        ]
+        return SchedulerSettingsOutput(settings=consolidated_settings)
+
 
 @invocation(
     "ltx_video_generation",
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.5.0",
+    version="0.5.4",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -42,13 +127,12 @@ class LTXVideoInvocation(BaseInvocation):
         description="Select the generation task type", default="text-to-video"
     )
     prompt: str = InputField(
-        description="Text prompt for the video",
-        ui_component=UIComponent.Textarea
+        description="Text prompt for the video", ui_component=UIComponent.Textarea
     )
     negative_prompt: str = InputField(
-        description="Negative prompt to avoid unwanted artifacts", 
+        description="Negative prompt to avoid unwanted artifacts",
         default="worst quality, inconsistent motion, blurry, jittery, distorted",
-        ui_component=UIComponent.Textarea
+        ui_component=UIComponent.Textarea,
     )
     input_image: ImageField = InputField(
         description="Input image for image-to-video task", default=None
@@ -79,45 +163,61 @@ class LTXVideoInvocation(BaseInvocation):
         default=3.0,
     )
     seed: int = InputField(
-    description="seed for reproducibility. Set -1 for random behavior.", default=42
+        description="seed for reproducibility. Set -1 for random behavior.", default=42
     )
     max_length: Literal["128", "256", "512", "1024"] = InputField(
-        description="Maximum length of the input prompt in tokens. (Higher values may result in longer encoding times)", default="256"
+        description="Maximum length of the input prompt in tokens. (Higher values may result in longer encoding times)",
+        default="256",
     )
     output_path: str = InputField(
         description="Path to save the generated video",
         default=str(Path(__file__).parent / "generated_videos"),
     )
     save_last_frame: bool = InputField(
-    description="Save the last frame of the video as an uncompressed PNG file",
-    default=False
+        description="Save the last frame of the video as an uncompressed PNG file",
+        default=False,
     )
-    
+
     i2v_settings: str = InputField(
-            description="-compression Noise to help with I2V movement-", 
-            default="-compression Noise to help with I2V movement-", 
+        description="-compression Noise to help with I2V movement-",
+        default="-compression Noise to help with I2V movement-",
+        input=Input.Direct,
     )
     apply_compression: bool = InputField(
-        description="Apply compression artifacts to simulate video-like input", default=False
+        description="Apply compression artifacts to simulate video-like input",
+        default=False,
     )
     compression_intensity: int = InputField(
-        description="Compression intensity (higher = more compression artifacts, 0 = none)", default=20
+        description="Compression intensity (higher = more compression artifacts, 0 = none)",
+        default=20,
     )
-    
-    
+
     Upscale_settings: str = InputField(
-            description="-Upscale the output video-", 
-            default="-Upscale the output video-", 
+        description="-Upscale the output video-",
+        default="-Upscale the output video-",
+        input=Input.Direct,
     )
     upscale_frames: bool = InputField(
         description="Enable upscaling of video frames after generation", default=False
     )
-    upscale_model: Literal["RealESRGAN_x4plus.pth", "ealESRGAN_x4plus_anime_6B.pth", "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth" , "RealESRGAN_x2plus.pth" ] = InputField(
+    upscale_model: Literal[
+        "RealESRGAN_x4plus.pth",
+        "ealESRGAN_x4plus_anime_6B.pth",
+        "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth",
+        "RealESRGAN_x2plus.pth",
+    ] = InputField(
         description="Upscale Model Selection", default="RealESRGAN_x2plus.pth"
     )
-    
-    
-    def initialize_pipeline(self, context: InvocationContext) -> LTXPipeline | LTXImageToVideoPipeline:
+
+    scheduler_settings_override: list[str] = InputField(
+        description="Link a scheduler settings node to override defaults.",
+        default=[],
+        input=Input.Connection,
+    )
+
+    def initialize_pipeline(
+        self, context: InvocationContext
+    ) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
             context.util.signal_progress("Loading transformer model...")
             single_file_url = context.models.download_and_cache_model(
@@ -132,7 +232,6 @@ class LTXVideoInvocation(BaseInvocation):
             context.util.signal_progress("Loading text encoder...")
             text_encoder_path = context.models.download_and_cache_model(
                 source="Lightricks/LTX-Video::/text_encoder"
-                
             )
             text_encoder = T5EncoderModel.from_pretrained(
                 pretrained_model_name_or_path=str(text_encoder_path),
@@ -169,21 +268,57 @@ class LTXVideoInvocation(BaseInvocation):
             )
             vae.enable_tiling()
 
+            scheduler_config_path = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/scheduler"
+            )
+            with open(scheduler_config_path / "scheduler_config.json", "r") as f:
+                scheduler_config = json.load(f)
+
+            if self.scheduler_settings_override:
+                print(
+                    f"Scheduler settings override: {self.scheduler_settings_override}"
+                )
+                scheduler_settings = {}
+                for setting in self.scheduler_settings_override:
+                    if ":" in setting:
+                        key, value = setting.split(":", 1)
+                        try:
+                            if "." in value:
+                                scheduler_settings[key] = float(value)
+                            elif value.isdigit():
+                                scheduler_settings[key] = int(value)
+                            elif value.lower() in ["true", "false"]:
+                                scheduler_settings[key] = value.lower() == "true"
+                            else:
+                                scheduler_settings[key] = value
+                        except Exception as e:
+                            raise ValueError(f"Error parsing setting '{setting}': {e}")
+                    else:
+                        raise ValueError(
+                            f"Warning: Setting '{setting}' is not in the expected 'key:value' format and will be ignored."
+                        )
+
+                for key, value in scheduler_settings.items():
+                    if key in scheduler_config:
+                        scheduler_config[key] = value
+
+            scheduler = FlowMatchEulerDiscreteScheduler.from_config(scheduler_config)
+
             if self.task_type == "text-to-video":
-                pipeline = LTXPipeline.from_pretrained(
-                    "Lightricks/LTX-Video",
+                pipeline = LTXPipeline(
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
+                    scheduler=scheduler,
                 )
             elif self.task_type == "image-to-video":
-                pipeline = LTXImageToVideoPipeline.from_pretrained(
-                    "Lightricks/LTX-Video",
+                pipeline = LTXImageToVideoPipeline(
                     transformer=transformer,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
+                    scheduler=scheduler,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
@@ -199,7 +334,6 @@ class LTXVideoInvocation(BaseInvocation):
             raise
 
     def load_image(self, context):
-        
         try:
             if not self.input_image:
                 raise ValueError("No input image provided.")
@@ -212,13 +346,17 @@ class LTXVideoInvocation(BaseInvocation):
                 image = image.convert("RGB")
 
             original_width, original_height = image.size
-            scale = min(int(self.width) / original_width, int(self.height) / original_height)
+            scale = min(
+                int(self.width) / original_width, int(self.height) / original_height
+            )
             new_width = (int(original_width * scale) // 32) * 32
             new_height = (int(original_height * scale) // 32) * 32
             image = image.resize((new_width, new_height), Image.LANCZOS)
 
             if self.apply_compression:
-                image = self.add_compression_artifacts(image, self.compression_intensity)
+                image = self.add_compression_artifacts(
+                    image, self.compression_intensity
+                )
 
             return image
 
@@ -227,15 +365,16 @@ class LTXVideoInvocation(BaseInvocation):
             return None
 
     def add_compression_artifacts(self, image, intensity):
-        
         try:
             image_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
             encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 100 - intensity]
-            _, encoded_image = cv2.imencode('.jpg', image_cv, encode_param)
+            _, encoded_image = cv2.imencode(".jpg", image_cv, encode_param)
             decoded_image = cv2.imdecode(encoded_image, cv2.IMREAD_COLOR)
 
-            compressed_image = Image.fromarray(cv2.cvtColor(decoded_image, cv2.COLOR_BGR2RGB))
+            compressed_image = Image.fromarray(
+                cv2.cvtColor(decoded_image, cv2.COLOR_BGR2RGB)
+            )
             return compressed_image
 
         except Exception as e:
@@ -265,15 +404,18 @@ class LTXVideoInvocation(BaseInvocation):
 
                 upscaled_output = esrgan_invocation.invoke(context)
 
-                upscaled_image = context.images.get_pil(upscaled_output.image.image_name)
+                upscaled_image = context.images.get_pil(
+                    upscaled_output.image.image_name
+                )
 
-                upscaled_frames.append(cv2.cvtColor(np.array(upscaled_image), cv2.COLOR_RGB2BGR))
+                upscaled_frames.append(
+                    cv2.cvtColor(np.array(upscaled_image), cv2.COLOR_RGB2BGR)
+                )
 
             except Exception as e:
                 print(f"Error during frame upscaling: {e}")
 
         return upscaled_frames
-
 
     def generate_video(
         self,
@@ -297,7 +439,7 @@ class LTXVideoInvocation(BaseInvocation):
             generator = torch.manual_seed(self.seed) if self.seed > 0 else None
 
             context.util.signal_progress(f"Generating Video With Prompt: {prompt}")
-            
+
             def callback_on_step_end(
                 pipeline: LTXPipeline | LTXImageToVideoPipeline,
                 step: int,
@@ -305,7 +447,9 @@ class LTXVideoInvocation(BaseInvocation):
                 callback_kwargs: dict,
             ):
                 progress = min((step + 1) / self.num_inference_steps, 1.0)
-                context.util.signal_progress(f"Step {step + 1}/{self.num_inference_steps}", progress)
+                context.util.signal_progress(
+                    f"Step {step + 1}/{self.num_inference_steps}", progress
+                )
                 return callback_kwargs
 
             pipeline_kwargs = {
@@ -329,7 +473,8 @@ class LTXVideoInvocation(BaseInvocation):
             if video_output.frames:
                 video_frames = [
                     cv2.cvtColor(
-                        np.clip(np.array(frame, dtype=np.uint8), 0, 255), cv2.COLOR_RGB2BGR
+                        np.clip(np.array(frame, dtype=np.uint8), 0, 255),
+                        cv2.COLOR_RGB2BGR,
                     )
                     for sublist in video_output.frames
                     for frame in (sublist if isinstance(sublist, list) else [sublist])
@@ -339,7 +484,9 @@ class LTXVideoInvocation(BaseInvocation):
                 print(f"Total frames collected: {len(video_frames)}")
 
                 Path(self.output_path).mkdir(parents=True, exist_ok=True)
-                original_video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.mp4"
+                original_video_file_name = (
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.mp4"
+                )
                 original_video_path = Path(self.output_path) / original_video_file_name
 
                 frame_height, frame_width = video_frames[0].shape[:2]
@@ -358,7 +505,11 @@ class LTXVideoInvocation(BaseInvocation):
             if self.upscale_frames:
                 model_name = self.upscale_model
 
-                if model_name in ["RealESRGAN_x4plus.pth", "ealESRGAN_x4plus_anime_6B.pth", "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth"]:
+                if model_name in [
+                    "RealESRGAN_x4plus.pth",
+                    "ealESRGAN_x4plus_anime_6B.pth",
+                    "ESRGAN_SRx4_DF2KOST_official-ff704c30.pth",
+                ]:
                     scale_factor = 4
                 elif model_name == "RealESRGAN_x2plus.pth":
                     scale_factor = 2
@@ -377,7 +528,9 @@ class LTXVideoInvocation(BaseInvocation):
 
                 if upscaled_frames:
                     upscale_video_file_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model_name}_upscaled.mp4"
-                    upscale_video_path = Path(self.output_path) / upscale_video_file_name
+                    upscale_video_path = (
+                        Path(self.output_path) / upscale_video_file_name
+                    )
 
                     upscale_height, upscale_width = (
                         frame_height * scale_factor,
@@ -394,8 +547,9 @@ class LTXVideoInvocation(BaseInvocation):
                     upscale_out.release()
                     print(f"Upscaled video successfully saved to: {upscale_video_path}")
 
-
-                return StringOutput(value=f"Original video saved to: {original_video_path}")
+                return StringOutput(
+                    value=f"Original video saved to: {original_video_path}"
+                )
 
             return StringOutput(value="No valid frames generated.")
 
@@ -403,9 +557,7 @@ class LTXVideoInvocation(BaseInvocation):
             print(f"Error during video generation: {e}")
             return StringOutput(value=f"Error during video generation: {str(e)}")
 
-        
     def invoke(self, context: InvocationContext) -> StringOutput:
-        
         try:
             context.util.signal_progress("Initializing the pipeline...")
             pipeline = self.initialize_pipeline(context)
@@ -413,7 +565,9 @@ class LTXVideoInvocation(BaseInvocation):
                 return StringOutput(value="Pipeline initialization failed.")
 
             if self.task_type == "image-to-video" and not self.input_image:
-                return StringOutput(value="Input image is required for image-to-video task.")
+                return StringOutput(
+                    value="Input image is required for image-to-video task."
+                )
 
             image = (
                 self.load_image(context) if self.task_type == "image-to-video" else None
