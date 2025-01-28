@@ -178,11 +178,6 @@ class LTXVideoInvocation(BaseInvocation):
         default=False,
     )
 
-    i2v_settings: str = InputField(
-        description="-compression Noise to help with I2V movement-",
-        default="-compression Noise to help with I2V movement-",
-        input=Input.Direct,
-    )
     apply_compression: bool = InputField(
         description="Apply compression artifacts to simulate video-like input",
         default=False,
@@ -192,11 +187,6 @@ class LTXVideoInvocation(BaseInvocation):
         default=20,
     )
 
-    Upscale_settings: str = InputField(
-        description="-Upscale the output video-",
-        default="-Upscale the output video-",
-        input=Input.Direct,
-    )
     upscale_frames: bool = InputField(
         description="Enable upscaling of video frames after generation", default=False
     )
@@ -501,6 +491,11 @@ class LTXVideoInvocation(BaseInvocation):
                     out.write(frame)
                 out.release()
                 print(f"Original video successfully saved to: {original_video_path}")
+                                
+                if self.save_last_frame:
+                    last_video_frame_path = Path(self.output_path) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.png"
+                    cv2.imwrite(str(last_video_frame_path), video_frames[-1])
+                    print(f"Last upscaled frame saved to: {last_video_frame_path}")
 
             if self.upscale_frames:
                 model_name = self.upscale_model
@@ -546,11 +541,16 @@ class LTXVideoInvocation(BaseInvocation):
                         upscale_out.write(frame)
                     upscale_out.release()
                     print(f"Upscaled video successfully saved to: {upscale_video_path}")
+                    
+                if self.save_last_frame:
+                    last_upscaled_frame_path = Path(self.output_path) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model_name}_upscaled.png"
+                    cv2.imwrite(str(last_upscaled_frame_path), video_frames[-1])
+                    print(f"Last upscaled frame saved to: {last_upscaled_frame_path}")
 
                 return StringOutput(
                     value=f"Original video saved to: {original_video_path}"
                 )
-
+                
             return StringOutput(value="No valid frames generated.")
 
         except Exception as e:
