@@ -486,7 +486,7 @@ class LTXVideoInvocation(BaseInvocation):
                 frame_height, frame_width = video_frames[0].shape[:2]
                 out = cv2.VideoWriter(
                     str(original_video_path),
-                    cv2.VideoWriter_fourcc(*"MP4V"),
+                    cv2.VideoWriter_fourcc(*"mp4v"),
                     self.fps,
                     (frame_width, frame_height),
                 )
@@ -537,7 +537,7 @@ class LTXVideoInvocation(BaseInvocation):
                     )
                     upscale_out = cv2.VideoWriter(
                         str(upscale_video_path),
-                        cv2.VideoWriter_fourcc(*"MP4V"),
+                        cv2.VideoWriter_fourcc(*"mp4v"),
                         self.fps,
                         (upscale_width, upscale_height),
                     )
