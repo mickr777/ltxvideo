@@ -30,4 +30,4 @@ Please note that this may cause other issues in invoke (so far I have not notice
 | compression_intensity   | Compression intensity level (higher = more compression artifacts, 0 = none). Default is `20`.    |
 | upscale_frames          | Enable upscaling of video frames after generation. Default is `False`.                          |
 | upscale_model           | Upscale model selection. Default is `RealESRGAN_x2plus.pth`.                                    |
-| scheduler_settings_override | Link a scheduler settings node to override default values. Default is an empty list (`[]`).  |
+
