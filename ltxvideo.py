@@ -21,103 +21,22 @@ from diffusers import (
 from invokeai.app.invocations.upscale import ESRGANInvocation
 from invokeai.invocation_api import (
     BaseInvocation,
-    BaseInvocationOutput,
     ImageField,
     InputField,
     InvocationContext,
-    OutputField,
     StringOutput,
     UIComponent,
     invocation,
-    invocation_output,
-    Input,
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
-
-
-@invocation_output("scheduler_settings_output")
-class SchedulerSettingsOutput(BaseInvocationOutput):
-    """Scheduler Settings Output"""
-
-    settings: list[str] = OutputField(
-        description="Consolidated scheduler settings as a list."
-    )
-    
-@invocation(
-    "ltx_scheduler_settings",
-    title="ltx Scheduler Settings Override",
-    tags=["scheduler", "configuration"],
-    category="scheduler",
-    version="0.1.0",
-)
-class LtxSchedulerSettingsInvocation(BaseInvocation):
-    """
-    Node for defining and outputting scheduler settings.
-    """
-
-    base_image_seq_len: int = InputField(
-        description="Base image sequence length.", default=1024
-    )
-    base_shift: float = InputField(
-        description="Base amount of shift to apply.", default=0.95
-    )
-    max_image_seq_len: int = InputField(
-        description="Maximum image sequence length.", default=4096
-    )
-    max_shift: float = InputField(
-        description="Maximum amount of shift to apply.", default=2.05
-    )
-    num_train_timesteps: int = InputField(
-        description="Number of training timesteps.", default=1000
-    )
-    shift: float = InputField(
-        description="Shift value for timestep control.", default=1.0
-    )
-    shift_terminal: float = InputField(description="Terminal shift value.", default=0.1)
-    use_karras_sigmas: bool = InputField(
-        description="Enable Karras sigmas for improved quality.", default=False
-    )
-    invert_sigmas: bool = InputField(
-        description="Enable inversion of sigmas.", default=False
-    )
-    use_beta_sigmas: bool = InputField(
-        description="Enable beta sigmas for training.", default=False
-    )
-    use_dynamic_shifting: bool = InputField(
-        description="Enable dynamic shifting during training.", default=True
-    )
-    use_exponential_sigmas: bool = InputField(
-        description="Enable exponential sigmas.", default=False
-    )
-
-    def invoke(self, context: InvocationContext) -> SchedulerSettingsOutput:
-        """
-        Outputs all scheduler settings as a consolidated list of key:value strings.
-        """
-        consolidated_settings = [
-            f"base_image_seq_len:{self.base_image_seq_len}",
-            f"base_shift:{self.base_shift}",
-            f"max_image_seq_len:{self.max_image_seq_len}",
-            f"max_shift:{self.max_shift}",
-            f"num_train_timesteps:{self.num_train_timesteps}",
-            f"shift:{self.shift}",
-            f"shift_terminal:{self.shift_terminal}",
-            f"use_karras_sigmas:{self.use_karras_sigmas}",
-            f"invert_sigmas:{self.invert_sigmas}",
-            f"use_beta_sigmas:{self.use_beta_sigmas}",
-            f"use_dynamic_shifting:{self.use_dynamic_shifting}",
-            f"use_exponential_sigmas:{self.use_exponential_sigmas}",
-        ]
-        return SchedulerSettingsOutput(settings=consolidated_settings)
-
 
 @invocation(
     "ltx_video_generation",
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.5.4",
+    version="0.5.5",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
@@ -141,22 +60,23 @@ class LTXVideoInvocation(BaseInvocation):
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544", 
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992", 
         "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Width of the generated video", default="640")
+    ] = InputField(description="Width of the generated video", default="704")
     height: Literal[
         "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544",
         "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992",
           "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
-    ] = InputField(description="Height of the generated video", default="640")
+    ] = InputField(description="Height of the generated video", default="512")
     
     num_frames: Literal[
         "9", "17", "25", "33", "41", "49", "57", "65", "73", "81", "89", "97", "105", "113", "121", "129",
         "137", "145", "153", "161", "169", "177", "185", "193", "201", "209", "217", "225", "233", "241", "249", "257",
-    ] = InputField(description="Number of frames in the video", default="105")
+    ] = InputField(description="Number of frames in the video", default="161")
+    
     fps: int = InputField(
         description="Frames per second for the generated video", default=24
     )
     num_inference_steps: int = InputField(
-        description="Number of inference steps for video generation", default=30
+        description="Number of inference steps for video generation", default=50
     )
     guidance_scale: float = InputField(
         description="Guidance scale for classifier-free diffusion. Higher values = stronger prompt adherence, lower values = better image quality.",
@@ -197,12 +117,6 @@ class LTXVideoInvocation(BaseInvocation):
         "RealESRGAN_x2plus.pth",
     ] = InputField(
         description="Upscale Model Selection", default="RealESRGAN_x2plus.pth"
-    )
-
-    scheduler_settings_override: list[str] = InputField(
-        description="Link a scheduler settings node to override defaults.",
-        default=[],
-        input=Input.Connection,
     )
 
     def initialize_pipeline(
@@ -263,34 +177,6 @@ class LTXVideoInvocation(BaseInvocation):
             )
             with open(scheduler_config_path / "scheduler_config.json", "r") as f:
                 scheduler_config = json.load(f)
-
-            if self.scheduler_settings_override:
-                print(
-                    f"Scheduler settings override: {self.scheduler_settings_override}"
-                )
-                scheduler_settings = {}
-                for setting in self.scheduler_settings_override:
-                    if ":" in setting:
-                        key, value = setting.split(":", 1)
-                        try:
-                            if "." in value:
-                                scheduler_settings[key] = float(value)
-                            elif value.isdigit():
-                                scheduler_settings[key] = int(value)
-                            elif value.lower() in ["true", "false"]:
-                                scheduler_settings[key] = value.lower() == "true"
-                            else:
-                                scheduler_settings[key] = value
-                        except Exception as e:
-                            raise ValueError(f"Error parsing setting '{setting}': {e}")
-                    else:
-                        raise ValueError(
-                            f"Warning: Setting '{setting}' is not in the expected 'key:value' format and will be ignored."
-                        )
-
-                for key, value in scheduler_settings.items():
-                    if key in scheduler_config:
-                        scheduler_config[key] = value
 
             scheduler = FlowMatchEulerDiscreteScheduler.from_config(scheduler_config)
 
