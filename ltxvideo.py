@@ -1,6 +1,5 @@
 # pip install diffusers==0.32.2
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -10,10 +9,8 @@ import numpy as np
 import torch
 from diffusers import (
     AutoencoderKLLTXVideo,
-    FlowMatchEulerDiscreteScheduler,
     LTXImageToVideoPipeline,
     LTXPipeline,
-    LTXVideoTransformer3DModel,
 )
 from diffusers import (
     BitsAndBytesConfig as DiffusersBitsAndBytesConfig,
@@ -30,6 +27,7 @@ from invokeai.invocation_api import (
 )
 from PIL import Image
 from transformers import T5EncoderModel, T5Tokenizer
+
 
 @invocation(
     "ltx_video_generation",
@@ -57,21 +55,119 @@ class LTXVideoInvocation(BaseInvocation):
         description="Input image for image-to-video task", default=None
     )
     width: Literal[
-        "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544", 
-        "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992", 
-        "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
+        "128",
+        "160",
+        "192",
+        "224",
+        "256",
+        "288",
+        "320",
+        "352",
+        "384",
+        "416",
+        "448",
+        "480",
+        "512",
+        "544",
+        "576",
+        "608",
+        "640",
+        "672",
+        "704",
+        "736",
+        "768",
+        "800",
+        "832",
+        "864",
+        "896",
+        "928",
+        "960",
+        "992",
+        "1024",
+        "1056",
+        "1088",
+        "1120",
+        "1152",
+        "1184",
+        "1216",
+        "1248",
+        "1280",
     ] = InputField(description="Width of the generated video", default="704")
     height: Literal[
-        "128", "160", "192", "224", "256", "288", "320", "352", "384", "416", "448", "480", "512", "544",
-        "576", "608", "640", "672", "704", "736", "768", "800", "832", "864", "896", "928", "960", "992",
-          "1024", "1056", "1088", "1120", "1152", "1184", "1216", "1248", "1280"
+        "128",
+        "160",
+        "192",
+        "224",
+        "256",
+        "288",
+        "320",
+        "352",
+        "384",
+        "416",
+        "448",
+        "480",
+        "512",
+        "544",
+        "576",
+        "608",
+        "640",
+        "672",
+        "704",
+        "736",
+        "768",
+        "800",
+        "832",
+        "864",
+        "896",
+        "928",
+        "960",
+        "992",
+        "1024",
+        "1056",
+        "1088",
+        "1120",
+        "1152",
+        "1184",
+        "1216",
+        "1248",
+        "1280",
     ] = InputField(description="Height of the generated video", default="512")
-    
+
     num_frames: Literal[
-        "9", "17", "25", "33", "41", "49", "57", "65", "73", "81", "89", "97", "105", "113", "121", "129",
-        "137", "145", "153", "161", "169", "177", "185", "193", "201", "209", "217", "225", "233", "241", "249", "257",
+        "9",
+        "17",
+        "25",
+        "33",
+        "41",
+        "49",
+        "57",
+        "65",
+        "73",
+        "81",
+        "89",
+        "97",
+        "105",
+        "113",
+        "121",
+        "129",
+        "137",
+        "145",
+        "153",
+        "161",
+        "169",
+        "177",
+        "185",
+        "193",
+        "201",
+        "209",
+        "217",
+        "225",
+        "233",
+        "241",
+        "249",
+        "257",
     ] = InputField(description="Number of frames in the video", default="161")
-    
+
     fps: int = InputField(
         description="Frames per second for the generated video", default=24
     )
@@ -124,13 +220,9 @@ class LTXVideoInvocation(BaseInvocation):
     ) -> LTXPipeline | LTXImageToVideoPipeline:
         try:
             context.util.signal_progress("Loading transformer model...")
-            single_file_url = context.models.download_and_cache_model(
-                source="Lightricks/LTX-Video::/ltx-video-2b-v0.9.1.safetensors"
-            )
 
-            transformer = LTXVideoTransformer3DModel.from_single_file(
-                str(single_file_url),
-                torch_dtype=torch.bfloat16,
+            ltx_model_path = context.models.download_and_cache_model(
+                source="Lightricks/LTX-Video::/ltx-video-2b-v0.9.1.safetensors"
             )
 
             context.util.signal_progress("Loading text encoder...")
@@ -145,7 +237,6 @@ class LTXVideoInvocation(BaseInvocation):
                     llm_int8_enable_fp32_cpu_offload=True,
                     bnb_4bit_compute_dtype=torch.bfloat16,
                 ),
-                device_map="auto",
                 low_cpu_mem_usage=True,
                 torch_dtype=torch.bfloat16,
             )
@@ -162,39 +253,27 @@ class LTXVideoInvocation(BaseInvocation):
             tokenizer.model_max_length = 1024
             tokenizer.max_length = 1024
 
-            context.util.signal_progress("Loading VAE...")
-            vae_path = context.models.download_and_cache_model(
-                source="Lightricks/LTX-Video::/vae"
-            )
-            vae = AutoencoderKLLTXVideo.from_pretrained(
-                pretrained_model_name_or_path=str(vae_path),
+            vae = AutoencoderKLLTXVideo.from_single_file(
+                ltx_model_path,
                 torch_dtype=torch.bfloat16,
             )
             vae.enable_tiling()
 
-            scheduler_config_path = context.models.download_and_cache_model(
-                source="Lightricks/LTX-Video::/scheduler"
-            )
-            with open(scheduler_config_path / "scheduler_config.json", "r") as f:
-                scheduler_config = json.load(f)
-
-            scheduler = FlowMatchEulerDiscreteScheduler.from_config(scheduler_config)
-
             if self.task_type == "text-to-video":
-                pipeline = LTXPipeline(
-                    transformer=transformer,
+                pipeline = LTXPipeline.from_single_file(
+                    ltx_model_path,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    scheduler=scheduler,
+                    torch_dtype=torch.bfloat16,
                 )
             elif self.task_type == "image-to-video":
-                pipeline = LTXImageToVideoPipeline(
-                    transformer=transformer,
+                pipeline = LTXImageToVideoPipeline.from_single_file(
+                    ltx_model_path,
                     text_encoder=text_encoder,
                     tokenizer=tokenizer,
                     vae=vae,
-                    scheduler=scheduler,
+                    torch_dtype=torch.bfloat16,
                 )
             else:
                 raise ValueError(f"Unsupported task type: {self.task_type}")
@@ -381,9 +460,12 @@ class LTXVideoInvocation(BaseInvocation):
                     out.write(frame)
                 out.release()
                 print(f"Original video successfully saved to: {original_video_path}")
-                                
+
                 if self.save_last_frame:
-                    last_video_frame_path = Path(self.output_path) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.png"
+                    last_video_frame_path = (
+                        Path(self.output_path)
+                        / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_original.png"
+                    )
                     cv2.imwrite(str(last_video_frame_path), video_frames[-1])
                     print(f"Last upscaled frame saved to: {last_video_frame_path}")
 
@@ -431,16 +513,19 @@ class LTXVideoInvocation(BaseInvocation):
                         upscale_out.write(frame)
                     upscale_out.release()
                     print(f"Upscaled video successfully saved to: {upscale_video_path}")
-                    
+
                 if self.save_last_frame:
-                    last_upscaled_frame_path = Path(self.output_path) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model_name}_upscaled.png"
+                    last_upscaled_frame_path = (
+                        Path(self.output_path)
+                        / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{model_name}_upscaled.png"
+                    )
                     cv2.imwrite(str(last_upscaled_frame_path), video_frames[-1])
                     print(f"Last upscaled frame saved to: {last_upscaled_frame_path}")
 
                 return StringOutput(
                     value=f"Original video saved to: {original_video_path}"
                 )
-                
+
             return StringOutput(value="No valid frames generated.")
 
         except Exception as e:
