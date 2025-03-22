@@ -5,7 +5,7 @@ The **LTX Video Generation Node** for InvokeAI enables users to generate dynamic
 
 ### ⚠️ Important Warning
 This node requires `diffusers` version to be installed from source, to Install it using the following command:  
-pip install git+https://github.com/huggingface/diffusers
+``pip install git+https://github.com/huggingface/diffusers``
 Please note that this may cause other issues in invoke (so far I have not noticed any)
 
 ### Fields and Descriptions
