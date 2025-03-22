@@ -4,8 +4,8 @@
 The **LTX Video Generation Node** for InvokeAI enables users to generate dynamic videos using the LTX-Video pipeline from Hugging Face Diffusers. This node supports both **text-to-video** and **image-to-video** generation
 
 ### ⚠️ Important Warning
-This node requires `diffusers` version **0.32.2** to work correctly. to Install it using the following command:  
-pip install diffusers==0.32.2  
+This node requires `diffusers` version to be installed from source, to Install it using the following command:  
+pip install git+https://github.com/huggingface/diffusers
 Please note that this may cause other issues in invoke (so far I have not noticed any)
 
 ### Fields and Descriptions
@@ -28,6 +28,4 @@ Please note that this may cause other issues in invoke (so far I have not notice
 | save_last_frame         | Option to save the last frame of the video as an uncompressed PNG file. Default is `False`.      |
 | apply_compression       | Enable compression artifacts to simulate video-like input. Default is `False`.                  |
 | compression_intensity   | Compression intensity level (higher = more compression artifacts, 0 = none). Default is `20`.    |
-| upscale_frames          | Enable upscaling of video frames after generation. Default is `False`.                          |
-| upscale_model           | Upscale model selection. Default is `RealESRGAN_x2plus.pth`.                                    |
 
