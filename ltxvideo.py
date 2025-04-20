@@ -1,5 +1,3 @@
-# pip install git+https://github.com/huggingface/diffusers
-
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -10,6 +8,7 @@ import torch
 from diffusers.pipelines.ltx.pipeline_ltx_condition import (
     LTXConditionPipeline,
     LTXVideoCondition,
+    LTXVideoTransformer3DModel,
 )
 from invokeai.invocation_api import (
     BaseInvocation,
@@ -28,11 +27,16 @@ from PIL import Image
     title="LTX Video Generation",
     tags=["video", "LTX", "generation"],
     category="video",
-    version="0.9.5",
+    version="0.9.6",
     use_cache=False,
 )
 class LTXVideoInvocation(BaseInvocation):
-    """Generates videos using LTX-Video v0.9.5 pipeline with condition support."""
+    """Generates videos using LTX-Video v0.9.6 pipeline with condition support."""
+
+    model_type: Literal["YiYiXu/ltxv-2b-0.9.6-dev", "YiYiXu/ltxv-2b-0.9.6-distilled"] = InputField(
+        description="Select 8 steps for distilled",
+        default="YiYiXu/ltxv-2b-0.9.6-dev"
+    )
 
     task_type: Literal["text-to-video", "image-to-video"] = InputField(
         description="Select the generation task type",
@@ -189,9 +193,19 @@ class LTXVideoInvocation(BaseInvocation):
 
     def initialize_pipeline(self, context: InvocationContext) -> LTXConditionPipeline:
         try:
-            context.util.signal_progress("Loading LTX-Video v0.9.5 pipeline...")
+            
+            transformer = LTXVideoTransformer3DModel.from_pretrained(
+                self.model_type,
+                subfolder="transformer",
+                variant="bf16",
+                torch_dtype=torch.bfloat16,
+            )
+            
+            context.util.signal_progress("Loading LTX-Video v0.9.6 pipeline...")
             pipeline = LTXConditionPipeline.from_pretrained(
-                "Lightricks/LTX-Video-0.9.5", torch_dtype=torch.bfloat16
+                "Lightricks/LTX-Video-0.9.5",
+                transformer=transformer,
+                torch_dtype=torch.bfloat16
             )
             pipeline.vae.enable_tiling()
             pipeline.enable_sequential_cpu_offload()
@@ -258,11 +272,13 @@ class LTXVideoInvocation(BaseInvocation):
                 context.util.signal_progress(f"Step {step + 1}/{self.num_inference_steps}", progress)
                 return callback_kwargs
 
-            generator = torch.Generator(device="cuda").manual_seed(self.seed) if self.seed > 0 else None
+            seed = self.seed if self.seed is not None else -1
+            generator = torch.Generator(device="cuda").manual_seed(seed) if seed > 0 else None
 
-            conditions = []
+            conditions = None
+
             if self.task_type == "image-to-video" and image:
-                conditions.append(LTXVideoCondition(image=image, frame_index=0))
+                conditions = [LTXVideoCondition(image=image, frame_index=0)]
 
             video_output = pipeline(
                 conditions=conditions,
