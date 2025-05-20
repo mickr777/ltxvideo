@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 import cv2
 import numpy as np
@@ -33,14 +33,14 @@ from PIL import Image
 class LTXVideoInvocation(BaseInvocation):
     """Generates videos using LTX-Video v0.9.6 pipeline with condition support."""
 
-    model_type: Literal["YiYiXu/ltxv-2b-0.9.6-dev", "YiYiXu/ltxv-2b-0.9.6-distilled"] = InputField(
-        description="Select 8 steps for distilled",
-        default="YiYiXu/ltxv-2b-0.9.6-dev"
+    model_type: Literal[
+        "YiYiXu/ltxv-2b-0.9.6-dev", "YiYiXu/ltxv-2b-0.9.6-distilled"
+    ] = InputField(
+        description="Select 8 steps for distilled", default="YiYiXu/ltxv-2b-0.9.6-dev"
     )
 
     task_type: Literal["text-to-video", "image-to-video"] = InputField(
-        description="Select the generation task type",
-        default="text-to-video"
+        description="Select the generation task type", default="text-to-video"
     )
     prompt: str = InputField(
         description="Text prompt for the video", ui_component=UIComponent.Textarea
@@ -50,7 +50,7 @@ class LTXVideoInvocation(BaseInvocation):
         default="worst quality, inconsistent motion, blurry, jittery, distorted",
         ui_component=UIComponent.Textarea,
     )
-    input_image: ImageField = InputField(
+    input_image: Optional[ImageField] = InputField(
         description="Input image for image-to-video task", default=None
     )
     width: Literal[
@@ -193,19 +193,18 @@ class LTXVideoInvocation(BaseInvocation):
 
     def initialize_pipeline(self, context: InvocationContext) -> LTXConditionPipeline:
         try:
-            
             transformer = LTXVideoTransformer3DModel.from_pretrained(
                 self.model_type,
                 subfolder="transformer",
                 variant="bf16",
                 torch_dtype=torch.bfloat16,
             )
-            
+
             context.util.signal_progress("Loading LTX-Video v0.9.6 pipeline...")
             pipeline = LTXConditionPipeline.from_pretrained(
                 "Lightricks/LTX-Video-0.9.5",
                 transformer=transformer,
-                torch_dtype=torch.bfloat16
+                torch_dtype=torch.bfloat16,
             )
             pipeline.vae.enable_tiling()
             pipeline.enable_sequential_cpu_offload()
@@ -213,7 +212,7 @@ class LTXVideoInvocation(BaseInvocation):
         except Exception as e:
             print(f"Pipeline initialization error: {e}")
             raise
-        
+
     def load_image(self, context):
         try:
             if not self.input_image:
@@ -267,13 +266,19 @@ class LTXVideoInvocation(BaseInvocation):
             if self.task_type == "image-to-video" and image is not None:
                 output_width, output_height = image.size
 
-            def callback_on_step_end(pipeline, step: int, timestep: int, callback_kwargs: dict):
+            def callback_on_step_end(
+                pipeline, step: int, timestep: int, callback_kwargs: dict
+            ):
                 progress = min((step + 1) / self.num_inference_steps, 1.0)
-                context.util.signal_progress(f"Step {step + 1}/{self.num_inference_steps}", progress)
+                context.util.signal_progress(
+                    f"Step {step + 1}/{self.num_inference_steps}", progress
+                )
                 return callback_kwargs
 
             seed = self.seed if self.seed is not None else -1
-            generator = torch.Generator(device="cuda").manual_seed(seed) if seed > 0 else None
+            generator = (
+                torch.Generator(device="cuda").manual_seed(seed) if seed > 0 else None
+            )
 
             conditions = None
 
